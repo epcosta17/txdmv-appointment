@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Appointment Desk · TxDMV</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%230066FF%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-family=%27Helvetica,Arial%27 font-size=%2714%27 font-weight=%27bold%27 fill=%27white%27 text-anchor=%27middle%27%3ETX%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Funnel+Sans:wght@300..800&family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Inter:wght@100..900&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#F4F5F7; --surface:#FFFFFF; --surface-2:#F7F8FA; --surface-3:#EBEDF1;
+  --border:#E4E7EB; --border-strong:#CBD1D8;
+  --text:#1A1A1A; --text-2:#5C616B; --muted:#6E747D;
+  --accent:#0066FF; --accent-dim:#E4EEFF; --on-accent:#FFFFFF;
+  --warn:#C2410C; --warn-dim:#FFF2E9; --ok:#127A46; --ok-dim:#E6F6EE;
+  --r-sm:4px; --r-md:8px; --r-xl:12px; --r-full:9999px;
+  --head:Inter,system-ui,sans-serif; --body:Geist,system-ui,sans-serif;
+  --cap:'Funnel Sans',system-ui,sans-serif; --mono:'Geist Mono',ui-monospace,monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);font-size:14px;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font:inherit;color:inherit}
+.cap{font-family:var(--cap);font-size:11px;letter-spacing:1.1px;color:var(--text-2);text-transform:uppercase}
+.mono{font-family:var(--mono)}
+
+/* ---------- header ---------- */
+header{height:66px;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;padding:0 28px;position:sticky;top:0;z-index:20}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;border-radius:var(--r-md);background:var(--accent);color:#fff;
+  display:grid;place-items:center;font-family:var(--head);font-weight:700;font-size:15px}
+.brand h1{margin:0;font-family:var(--head);font-size:15px;font-weight:700;letter-spacing:-.1px}
+.brand p{margin:1px 0 0;font-size:11.5px;color:var(--muted)}
+.pills{display:flex;gap:8px;align-items:center}
+.pill{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:var(--r-full);
+  background:var(--surface-2);border:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--text-2)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none}
+.dot.ok{background:var(--ok)} .dot.accent{background:var(--accent)} .dot.warn{background:var(--warn)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.dot.live{animation:pulse 1.6s ease-in-out infinite}
+
+/* ---------- layout ---------- */
+.wrap{display:flex;gap:20px;padding:24px 28px 40px;align-items:flex-start}
+.left{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px}
+.right{width:380px;flex:none;display:flex;flex-direction:column;gap:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:20px}
+.card>h2{margin:0 0 16px;font-family:var(--cap);font-size:11px;letter-spacing:1.1px;
+  color:var(--text-2);text-transform:uppercase;font-weight:400}
+
+/* ---------- form ---------- */
+.fields{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:7px;flex:1;min-width:150px}
+.field label{font-family:var(--cap);font-size:10.5px;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+.control{width:100%;height:42px;padding:0 12px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-md);font-size:14px;font-family:var(--body);outline:none;transition:border-color .12s,box-shadow .12s}
+.control:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+select.control{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236E747D' stroke-width='1.8'><path d='M4 6.5 8 10.5 12 6.5'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center;padding-right:32px}
+textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;line-height:1.45}
+.btn{height:42px;padding:0 20px;border-radius:var(--r-md);background:var(--accent);color:var(--on-accent);
+  font-weight:600;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  transition:filter .12s,opacity .12s;white-space:nowrap}
+.btn:hover:not(:disabled){filter:brightness(.93)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:var(--surface);color:var(--text);border:1px solid var(--border-strong)}
+.btn.ghost:hover:not(:disabled){background:var(--surface-2);filter:none}
+.btn.danger{background:var(--warn)}
+.btn.block{width:100%}
+.hint{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+.hint p{margin:0;font-size:12px;color:var(--muted)}
+.switch{display:inline-flex;align-items:center;gap:9px;padding:6px 12px 6px 8px;border:1px solid var(--border);
+  border-radius:var(--r-full);background:var(--surface-2);font-size:12px;color:var(--text-2);cursor:pointer;user-select:none}
+.track{width:28px;height:16px;border-radius:var(--r-full);background:var(--border-strong);position:relative;transition:background .15s;flex:none}
+.track::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+  background:#fff;transition:transform .15s}
+.switch[aria-checked="true"] .track{background:var(--accent)}
+.switch[aria-checked="true"] .track::after{transform:translateX(12px)}
+.switch.warn[aria-checked="true"] .track{background:var(--warn)}
+
+/* ---------- results ---------- */
+.results-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.count{display:flex;align-items:baseline;gap:8px}
+.count b{font-family:var(--head);font-size:22px;font-weight:700;line-height:1}
+.count span{font-size:13px;color:var(--text-2)}
+.legend{display:flex;gap:14px;align-items:center}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:-1px}
+.legend span{font-family:var(--cap);font-size:11px;color:var(--muted)}
+.legend .free{background:var(--accent)}
+.legend .busy{background:var(--surface-2);outline:1px solid var(--border);outline-offset:-.5px}
+.legend .shut{background:var(--surface-3)}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-height:300px}
+.col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.col-head{padding:0 2px 10px;border-bottom:1px solid var(--border);margin-bottom:2px}
+.col-head .day{font-family:var(--cap);font-size:11px;letter-spacing:.8px;color:var(--muted);text-transform:uppercase;
+  display:flex;align-items:center;gap:6px}
+.col-head .date{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--text);margin-top:3px}
+.col-head .n{font-family:var(--mono);font-size:11px;color:var(--accent);margin-top:2px}
+.col-head .n.zero{color:var(--muted)}
+.tag-today{font-family:var(--cap);font-size:9.5px;letter-spacing:.6px;background:var(--accent-dim);
+  color:var(--accent);padding:2px 6px;border-radius:var(--r-sm)}
+.cell{height:52px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:13px;font-weight:600;width:100%}
+.cell.free{background:var(--accent);color:#fff;transition:transform .1s,filter .12s}
+.cell.free:hover{filter:brightness(.92)}
+.cell.free:active{transform:scale(.97)}
+@keyframes hit{0%,100%{box-shadow:0 0 0 0 #0066FF00}50%{box-shadow:0 0 0 4px #0066FF40}}
+.cell.free.hit{animation:hit 1.4s ease-in-out 3}
+.switch.disabled{opacity:.5;cursor:not-allowed}
+.cell.free[aria-pressed="true"]{border:2px solid var(--text);box-shadow:0 0 0 2px #FFFFFF8C}
+.cell.busy{background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);
+  font-family:var(--body);font-size:12px;font-weight:500}
+.cell.shut{flex:1;background:var(--surface-3);color:var(--text-2);font-family:var(--body);font-size:12px;font-weight:400}
+.empty-state{grid-column:1/-1;display:grid;place-items:center;padding:60px 20px;text-align:center;color:var(--muted)}
+.empty-state b{display:block;font-family:var(--head);font-size:15px;color:var(--text);margin-bottom:6px}
+.meta{display:flex;gap:24px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);flex-wrap:wrap}
+.meta div{display:flex;flex-direction:column;gap:3px}
+.meta dt{font-family:var(--cap);font-size:10px;letter-spacing:.8px;color:var(--muted);text-transform:uppercase}
+.meta dd{margin:0;font-family:var(--mono);font-size:12px;color:var(--text-2)}
+
+/* ---------- watch ---------- */
+.seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:3px;gap:3px}
+.seg button{flex:1;height:32px;border-radius:6px;font-size:13px;font-weight:500;color:var(--text-2);transition:.12s}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--text);box-shadow:0 1px 2px #1a1a1a14}
+.seg button.warn[aria-selected="true"]{background:var(--warn);color:#fff}
+.row2{display:flex;gap:12px}
+.log{margin-top:14px;border-top:1px solid var(--border);padding-top:12px;max-height:180px;overflow-y:auto;
+  display:flex;flex-direction:column;gap:5px}
+.log div{display:flex;gap:10px;font-family:var(--mono);font-size:11.5px;color:var(--text-2);line-height:1.4}
+.log time{color:var(--muted);flex:none}
+.log .ok{color:var(--ok);font-weight:500}
+.log .warn{color:var(--warn);font-weight:500}
+.log .error{color:#B42318}
+.banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r-md);
+  background:var(--warn-dim);border:1px solid #F5C9AC;color:var(--warn);font-size:12.5px;margin-bottom:14px}
+.banner.ok{background:var(--ok-dim);border-color:#B6E2CB;color:var(--ok)}
+.card.armed{border-color:var(--warn);box-shadow:0 0 0 3px var(--warn-dim)}
+
+/* ---------- modal ---------- */
+.scrim{position:fixed;inset:0;background:#1A1A1A66;display:grid;place-items:center;z-index:50;padding:24px}
+.scrim[hidden]{display:none}
+.modal{background:var(--surface);border-radius:var(--r-xl);width:min(460px,100%);padding:24px;
+  box-shadow:0 20px 60px #1a1a1a2e;max-height:90vh;overflow-y:auto}
+.modal h3{margin:0 0 4px;font-family:var(--head);font-size:19px;font-weight:700}
+.modal>p{margin:0 0 18px;font-size:13px;color:var(--text-2)}
+.summary{display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.summary div{display:flex;justify-content:space-between;gap:16px;padding:10px 14px;font-size:13px}
+.summary div+div{border-top:1px solid var(--border)}
+.summary dt{color:var(--text-2)}
+.summary dd{margin:0;font-weight:500;text-align:right;font-family:var(--mono);font-size:12.5px}
+.modal-actions{display:flex;gap:10px;margin-top:20px}
+.modal-actions .btn{flex:1}
+.big-number{font-family:var(--mono);font-size:38px;font-weight:600;letter-spacing:-1px;text-align:center;
+  padding:18px;background:var(--surface-2);border-radius:var(--r-md);margin:0 0 18px;user-select:all}
+/* custom dropdown: native selects can't be styled consistently across browsers */
+.dd{position:relative}
+.dd>select{position:absolute;width:0;height:0;opacity:0;pointer-events:none}
+.dd-btn{width:100%;height:42px;padding:0 12px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-md);font-size:14px;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;text-align:left;transition:border-color .12s,box-shadow .12s}
+.dd-btn:hover{border-color:var(--border-strong)}
+.dd-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd-btn svg{flex:none;color:var(--muted);transition:transform .15s}
+.dd.open .dd-btn{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.dd.open .dd-btn svg{transform:rotate(180deg)}
+.dd-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;padding:4px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
+  box-shadow:0 12px 32px #1a1a1a1f;max-height:288px;overflow-y:auto}
+.dd-menu[hidden]{display:none}
+.dd-opt{padding:9px 10px;border-radius:6px;font-size:13.5px;cursor:pointer;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd-opt:hover,.dd-opt.active{background:var(--surface-2)}
+.dd-opt[aria-selected="true"]{background:var(--accent-dim);color:var(--accent);font-weight:500}
+.icon-btn{width:34px;height:34px;border-radius:var(--r-md);border:1px solid var(--border);
+  background:var(--surface-2);color:var(--text-2);display:grid;place-items:center;transition:.12s}
+.icon-btn:hover{background:var(--surface-3);color:var(--text)}
+.set-group{margin-bottom:20px}
+.set-group>.cap{display:block;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.set-row b{display:block;font-size:13.5px;font-weight:500}
+.set-row small{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;max-width:280px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;
+  padding:12px 18px;border-radius:var(--r-md);font-size:13px;z-index:60;box-shadow:0 8px 24px #1a1a1a3d;max-width:520px}
+.toast[hidden]{display:none}
+.toast.bad{background:#B42318}
+.spin{width:14px;height:14px;border:2px solid #ffffff59;border-top-color:#fff;border-radius:50%;
+  animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:1180px){.wrap{flex-direction:column}.right{width:100%}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">TX</div>
+    <div>
+      <h1>APPOINTMENT DESK</h1>
+      <p>Texas Department of Motor Vehicles</p>
+    </div>
+  </div>
+  <div class="pills">
+    <div class="pill"><span class="dot" id="conn-dot"></span><span id="conn">—</span></div>
+    <div class="pill"><span class="dot" id="sess-dot"></span><span id="sess">sin sesión</span></div>
+    <button class="icon-btn" id="settings-btn" title="Ajustes" aria-label="Ajustes">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.4.46.71.87.87H21a2 2 0 1 1 0 4h-.09c-.41.16-.73.47-.87.87z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="left">
+
+    <section class="card">
+      <div class="fields">
+        <div class="field"><label for="office">Oficina</label>
+          <select class="control" id="office"></select></div>
+        <div class="field" style="flex:1.4"><label for="service">Trámite</label>
+          <select class="control" id="service"></select></div>
+        <div class="field" style="flex:0 0 170px"><label for="from-date">Desde</label>
+          <input class="control" type="date" id="from-date" /></div>
+        <button class="btn" id="search-btn">Buscar</button>
+      </div>
+      <div class="hint">
+        <span class="switch" id="fa-switch" role="switch" aria-checked="false" tabindex="0">
+          <span class="track"></span>Buscar más allá de los 3 días</span>
+        <p>El sitio solo muestra el día actual y los 2 siguientes — y hoy nunca tiene cupo.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="results-head">
+        <div class="count"><b id="slot-count">—</b><span>horarios disponibles</span></div>
+        <div class="legend">
+          <span><i class="free"></i>Libre</span>
+          <span><i class="busy"></i>Ocupado</span>
+          <span><i class="shut"></i>Cerrado</span>
+        </div>
+      </div>
+      <div class="grid" id="grid">
+        <div class="empty-state"><b>Sin resultados todavía</b>Elige oficina y trámite, y pulsa Buscar.</div>
+      </div>
+      <div class="meta">
+        <div><dt>última búsqueda</dt><dd id="m-at">—</dd></div>
+        <div><dt>latencia</dt><dd id="m-lat">—</dd></div>
+        <div><dt>portal</dt><dd>NemoQ · nemoqappointment.com</dd></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="right">
+    <section class="card" id="watch-card">
+      <h2>Vigilancia</h2>
+      <div id="watch-banner"></div>
+      <div class="seg" id="mode-seg">
+        <button data-mode="notify" aria-selected="true">Solo avisar</button>
+        <button data-mode="auto" class="warn" aria-selected="false">Reservar sola</button>
+      </div>
+      <div class="row2" style="margin-top:14px">
+        <div class="field"><label for="w-interval">Intervalo</label>
+          <select class="control" id="w-interval">
+            <option value="30">cada 30 s</option><option value="60" selected>cada 60 s</option>
+            <option value="120">cada 2 min</option><option value="300">cada 5 min</option>
+          </select></div>
+      </div>
+      <div class="row2" style="margin-top:12px">
+        <div class="field"><label for="w-date-from">Desde</label><input class="control" type="date" id="w-date-from" /></div>
+        <div class="field"><label for="w-date-to">Hasta</label><input class="control" type="date" id="w-date-to" /></div>
+      </div>
+      <div class="row2" style="margin-top:12px">
+        <div class="field"><label for="w-time-from">Hora desde</label><input class="control" type="time" id="w-time-from" value="09:00" /></div>
+        <div class="field"><label for="w-time-to">Hora hasta</label><input class="control" type="time" id="w-time-to" value="15:00" /></div>
+      </div>
+      <button class="btn block" id="watch-btn" style="margin-top:16px">Iniciar vigilancia</button>
+      <div class="log" id="watch-log"></div>
+    </section>
+  </div>
+</div>
+
+<div class="scrim" id="confirm-scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+    <h3 id="cf-title">Confirmar cita</h3>
+    <p>Revisa antes de enviar al portal.</p>
+    <div class="summary" id="cf-summary"></div>
+    <div class="banner" style="margin:16px 0 0">Esto reserva una cita real e inmediata.</div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="cf-cancel">Cancelar</button>
+      <button class="btn" id="cf-ok">Reservar ahora</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="done-scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dn-title">
+    <h3 id="dn-title">Cita confirmada</h3>
+    <p>El portal NemoQ registró la reserva.</p>
+    <div class="cap" style="margin-bottom:6px">Número de cita</div>
+    <p class="big-number" id="dn-number">—</p>
+    <div class="summary" id="dn-summary"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="dn-copy">Copiar número</button>
+      <button class="btn" id="dn-close">Nueva búsqueda</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="settings-scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="st-title">
+    <h3 id="st-title">Ajustes</h3>
+    <p>Se guardan en este equipo y se leen desde aquí en cada reserva.</p>
+
+    <div class="set-group">
+      <div class="cap">Conexión</div>
+      <div class="set-row">
+        <div>
+          <b>Usar proxy de Webshare</b>
+          <small id="proxy-note">Desactivado. El portal se abre directo desde tu conexión.</small>
+        </div>
+        <span class="switch" id="proxy-switch" role="switch" aria-checked="false" tabindex="0">
+          <span class="track"></span></span>
+      </div>
+    </div>
+
+    <div class="set-group">
+      <div class="cap">Datos del solicitante</div>
+
+      <div class="row2">
+        <div class="field"><label for="first_name">Nombre</label><input class="control" id="first_name" autocomplete="given-name" /></div>
+        <div class="field"><label for="last_name">Apellido</label><input class="control" id="last_name" autocomplete="family-name" /></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="email">Correo</label><input class="control" id="email" type="email" autocomplete="email" /></div>
+      <div class="row2" style="margin-top:12px">
+        <div class="field"><label for="phone">Teléfono</label><input class="control" id="phone" autocomplete="tel" /></div>
+        <div class="field"><label for="description">Trámite</label><input class="control" id="description" value="Title Services" /></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="details">Detalles (VIN o placa)</label>
+        <textarea class="control" id="details"></textarea></div>
+      <p style="margin:12px 0 0;font-size:11.5px;color:var(--muted)">Se guardan en este equipo, no se envían a ningún lado.</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="st-close">Cerrar</button>
+      <button class="btn" id="st-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

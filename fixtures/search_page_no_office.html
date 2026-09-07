@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Appointment</title>
+</head>
+<body>
+    <div id="ContentColumn" class="container">
+        <main id="Main" tabindex="-1">
+
+<div class="header">
+    <h1>Select time</h1>
+</div>
+
+<form action="/Booking/Booking/Next/uh5d75sjtv4" aria-label="Search" class="form-horizontal" method="post"><input name="__RequestVerificationToken" type="hidden" value="Vc2BEbEIpRSHVT7Caa_aCG0conX1siFZ50-nhXwT5bt6AiTfnqTiW-PzAyVVYZiaEU4VBrkAF3yrkWwhG8ltDW-p5K2B5KNZ-LClX3mKyZmUc_oGsfBhUYWudQ1AlfXnio6rFSFNqtDqAKeC3r-4dWjgT5JSEHR_HuR66-9_nzg1" />    <input type="hidden" name="FormId" value="1" />
+
+<div class="Box">
+    <h2>
+        Search time
+    </h2>
+
+    <div class="mb-3" hidden=&quot;hidden&quot;>
+        <label class="form-label" for="RegionId">Region:</label>
+        <div class="controls">
+
+            <select class="form-select" data-function="data-provider" data-param="regionId" data-url="/Booking/Ajax/GetSections?serviceGroupId=229" id="RegionId" name="RegionId"><option selected="selected" value="0">All regions</option>
+</select>
+
+        </div>
+    </div>
+
+    <div class="mb-3" >
+        <label class="form-label" for="SectionId">Office:</label>
+        <div class="controls">
+
+<select class="form-select" data-function="data-provider-subscriber" data-key="sections" data-param="sectionId" data-provider="#RegionId" data-url="/Booking/Ajax/GetServiceTypes?serviceGroupId=229" id="SectionId" name="SectionId"><option value="0">Select office...</option>
+<option value="181">Abilene</option>
+<option value="182">Amarillo</option>
+<option value="183">Austin</option>
+<option value="184">Beaumont</option>
+<option value="185">Corpus Christi</option>
+<option value="447">Dallas South</option>
+<option value="187">El Paso</option>
+<option value="188">Fort Worth</option>
+<option value="189">Houston North</option>
+<option value="448">Houston South</option>
+<option value="196">Longview</option>
+<option value="190">Lubbock</option>
+<option value="191">Odessa</option>
+<option value="192">Pharr</option>
+<option value="193">San Antonio</option>
+<option value="194">Waco</option>
+<option value="195">Wichita Falls</option>
+</select>
+        </div>
+    </div>
+
+    <div class="mb-3" >
+        <label class="form-label" for="ServiceTypeId">Appointment type:</label>
+        <div class="controls">
+
+            <select class="form-select" data-function="data-subscriber" data-key="serviceTypes" data-provider="#SectionId" id="ServiceTypeId" name="ServiceTypeId"><option value="1231"> Please Select...</option>
+<option value="1363">Commercial Vehicles (for Apportion/IRP Transactions Only)</option>
+</select>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label" for="datepicker">Date:</label>
+        <input type="date" id="datepicker" class="form-control"
+               value="2026-09-08" />
+        <input type="hidden" id="FromDateString" name="FromDateString"
+               value="2026-09-08" />
+    </div>
+
+    <div class="mb-3">
+        <div class="controls">
+            <input type="submit" class="btn btn-primary" name="TimeSearchButton" value="Search" />
+            <input type="submit" class="btn btn-primary" name="TimeSearchFirstAvailableButton" value="See First Available (Recommended)" />
+        </div>
+    </div>
+</div>
+
+</form>
+<form action="/Booking/Booking/Next/uh5d75sjtv4" aria-label="Available Times (Current Day and Next 2 Days Only)" class="form-horizontal" method="post"><input name="__RequestVerificationToken" type="hidden" value="P4jcWRcAYce-4KI3jT3KoozZ1NkYhkXZA5dtfJzm3SBigc8MopR_GEP3YjZCAbi3ejeAstbkeIOjw2m4C-sKVzZocVseR9QWnId8TcyaSwube9w9gy7A-WAPnA-l4tpU_RAhuCC-ZHoRFfeq3IKFDxkjBlXgyovkrxQLyKe-8DQ1" />    <input type="hidden" name="FormId" value="2" />
+    <div class="btn-toolbar">
+            <input class="btn btn-primary disable-on-save" id="booking-next" type="submit" name="Next" value="Next" />
+        <a class="btn btn-info" href="/Booking/Booking/Previous/uh5d75sjtv4">Back</a>
+    </div>
+</form>
+        </main>
+    </div>
+    <script src="/Booking/Scripts/timetable.js"></script>
+</body>
+</html>

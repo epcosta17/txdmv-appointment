@@ -1,0 +1,12 @@
+.env
+proxies.txt
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# artefactos locales
+design-export.html
+.playwright-mcp/
+*.png
