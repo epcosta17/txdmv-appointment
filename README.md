@@ -18,17 +18,23 @@ run.bat             # Windows: doble clic
 Levanta un servidor local y abre `http://127.0.0.1:8765/` en el navegador. Necesita
 Python 3.10+; la primera vez crea el entorno e instala las dependencias solo.
 
+- **Carriles** — hasta 2 a la vez, uno por oficina, lado a lado. Cada carril tiene
+  su **propia sesión del portal** (y su propia IP si el proxy está encendido), así
+  que buscan y reservan en paralelo sin pisarse. Con una sesión compartida se
+  estorbarían: el wizard es un flujo con estado, y la búsqueda de un carril
+  reemplazaría la página desde la que el otro va a reservar.
 - **Buscar** — elige oficina y trámite (se leen en vivo del portal) y pulsa Buscar.
   La grilla muestra la semana igual que el sitio: verde libre, gris ocupado, bloque
-  cerrado. Clic en un horario → confirmar → reservado.
+  cerrado. Clic en un horario → confirmar → reservado, en la sesión de ese carril.
 - **Ajustes** (engrane, o tecla `s`) — datos del solicitante, que se guardan en este
   equipo y se leen desde ahí en cada reserva; y el interruptor del proxy, **apagado
   por defecto**.
-- **Vigilancia** — reconsulta cada X segundos y avisa cuando aparece un hueco. La
-  grilla se pinta con lo que vio el vigilante, sin gastar una segunda búsqueda.
-  En *Reservar sola* toma el primer cupo dentro de tus filtros y se detiene; hay que
-  armarlo a propósito y confirmar, nunca arranca así.
-- Atajos: `r` buscar, `v` vigilar, `s` ajustes, `Esc` cerrar.
+- **Vigilancia** — cada carril vigila por su cuenta: reconsulta cada X segundos y
+  avisa cuando aparece un hueco. La grilla se pinta con lo que vio el vigilante, sin
+  gastar una segunda búsqueda. En *Reservar sola* toma el primer cupo dentro de tus
+  filtros y se detiene; hay que armarlo a propósito y confirmar, nunca arranca así.
+  Los dos carriles pueden vigilar y reservar al mismo tiempo.
+- Atajos: `n` nuevo carril, `s` ajustes, `Esc` cerrar.
 
 La sesión del portal se mantiene viva entre peticiones, igual que en el CLI: elegir
 un horario continúa el flujo en vez de reiniciarlo, así que cada búsqueda extra
@@ -143,6 +149,7 @@ Candidates that fail a live country check are skipped before the flow starts.
 | `webshare.py` | proxy loading, country filter, verification |
 | `app.py` | FastAPI: the local server and its JSON API |
 | `wizard_session.py` | the live portal session shared by the UI |
+| `lanes.py` | independent lanes: one session + watcher each |
 | `watcher.py` | polling and guarded auto-booking |
 | `static/` | the page (plain HTML/CSS/JS, no build step) |
 | `design.pen` | the Halo design the UI was built from |
@@ -154,4 +161,4 @@ Candidates that fail a live country check are skipped before the flow starts.
 python3 -m pytest -q
 ```
 
-119 tests, no network - they run against the captured pages in `fixtures/`.
+136 tests, no network - they run against the captured pages in `fixtures/`.

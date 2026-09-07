@@ -64,6 +64,28 @@ function loadApplicant() {
   } catch (_) {}
 }
 
+// -------------------------------------------------------------- day labels
+
+// The portal labels its columns in English ("Sunday 6 September"); the UI is Spanish.
+const WEEKDAYS = {sunday:"DOM", monday:"LUN", tuesday:"MAR", wednesday:"MIÉ",
+                  thursday:"JUE", friday:"VIE", saturday:"SÁB"};
+const MONTHS = {january:"ene", february:"feb", march:"mar", april:"abr", may:"may",
+                june:"jun", july:"jul", august:"ago", september:"sep", october:"oct",
+                november:"nov", december:"dic"};
+const MONTH_INDEX = Object.keys(MONTHS);
+
+function readTitle(title) {
+  const [weekday, day, month] = (title || "").trim().split(/\s+/);
+  const monthKey = (month || "").toLowerCase();
+  const today = new Date();
+  return {
+    weekday: WEEKDAYS[(weekday || "").toLowerCase()] || (weekday || "").slice(0, 3).toUpperCase(),
+    date: day && monthKey ? `${day} ${MONTHS[monthKey] || monthKey}` : "—",
+    isToday:
+      Number(day) === today.getDate() && MONTH_INDEX.indexOf(monthKey) === today.getMonth(),
+  };
+}
+
 // --------------------------------------------------------------- dropdowns
 
 // The native <select> stays in the DOM as the source of truth - `.value` and the
@@ -85,7 +107,7 @@ function enhanceSelect(select) {
   button.className = "dd-btn";
   button.setAttribute("aria-haspopup", "listbox");
   button.setAttribute("aria-expanded", "false");
-  const label = document.querySelector(`label[for="${select.id}"]`);
+  const label = select.closest(".field")?.querySelector("label");
   if (label) button.setAttribute("aria-label", label.textContent);
 
   const menu = document.createElement("div");
@@ -181,172 +203,372 @@ function enhanceSelect(select) {
   paint();
 }
 
-// ------------------------------------------------------------------ header
+// -------------------------------------------------------------------- state
 
-async function refreshState() {
+async function refresh() {
   try {
-    const { session, settings } = await api("/api/state");
-    $("conn").textContent = session.direct ? "DIRECTO" : "PROXY";
-    $("conn-dot").className = "dot " + (session.direct ? "" : "accent");
-    if (settings) applySettings(settings);
-    if (session.open) {
-      const mins = String(Math.floor(session.expires_in / 60)).padStart(2, "0");
-      const secs = String(session.expires_in % 60).padStart(2, "0");
-      $("sess").textContent = `SESIÓN ${mins}:${secs}`;
-      $("sess-dot").className = "dot ok";
-    } else {
-      $("sess").textContent = "sin sesión";
-      $("sess-dot").className = "dot";
-    }
+    const state = await api("/api/state");
+    applySettings(state.settings);
+    syncLanes(state);
+    $("conn").textContent = state.settings.use_proxy ? "PROXY" : "DIRECTO";
+    $("conn-dot").className = "dot " + (state.settings.use_proxy ? "accent" : "");
+    const open = state.lanes.filter((l) => l.session.open).length;
+    $("sess").textContent = open ? `${open} sesión${open > 1 ? "es" : ""}` : "sin sesión";
+    $("sess-dot").className = "dot " + (open ? "ok" : "");
   } catch (_) {
     $("conn").textContent = "SIN SERVIDOR";
     $("conn-dot").className = "dot warn";
   }
 }
 
-// ----------------------------------------------------------------- pickers
+function syncLanes(state) {
+  const seen = new Set();
+  state.lanes.forEach((lane) => {
+    seen.add(lane.id);
+    let panel = panels.get(lane.id);
+    if (!panel) {
+      panel = new LanePanel(lane);
+      panels.set(lane.id, panel);
+      $("lanes").appendChild(panel.root);
+    }
+    panel.update(lane);
+  });
+  panels.forEach((panel, id) => {
+    if (!seen.has(id)) {
+      panel.root.remove();
+      panels.delete(id);
+    }
+  });
+
+  $("lanes").classList.toggle("two", state.lanes.length > 1);
+  $("add-lane").disabled = state.lanes.length >= state.max_lanes;
+  $("lane-hint").textContent = state.lanes.length
+    ? "Cada carril es una oficina con su propia sesión: buscan y reservan en paralelo."
+    : "Añade un carril para empezar.";
+  if (!state.lanes.length && !$("lanes").querySelector(".empty-lane")) {
+    $("lanes").innerHTML =
+      '<div class="empty-lane"><b>Sin carriles</b>Añade uno para buscar citas.</div>';
+  } else if (state.lanes.length) {
+    $("lanes").querySelector(".empty-lane")?.remove();
+  }
+}
+
+// -------------------------------------------------------------------- lanes
+
+const panels = new Map();
+
+class LanePanel {
+  constructor(lane) {
+    this.id = lane.id;
+    this.mode = "notify";
+    this.firstAvailable = false;
+    this.result = null;
+    this.resultSeq = -1;
+    this.searching = false;
+    this.watching = false;
+
+    this.root = $("lane-tpl").content.firstElementChild.cloneNode(true);
+    const q = (sel) => this.root.querySelector(sel);
+    this.el = {
+      office: q(".js-office"), service: q(".js-service"), from: q(".js-from"),
+      search: q(".js-search"), close: q(".js-close"), fa: q(".js-fa"),
+      session: q(".js-session"), count: q(".js-count"), grid: q(".js-grid"),
+      at: q(".js-at"), lat: q(".js-lat"), banner: q(".js-banner"), mode: q(".js-mode"),
+      interval: q(".js-interval"), dateTo: q(".js-date-to"),
+      timeFrom: q(".js-time-from"), timeTo: q(".js-time-to"),
+      watch: q(".js-watch"), log: q(".js-log"),
+    };
+
+    this.el.from.value = isoToday();
+    fillOffices(this.el.office, lane.office);
+    fillServices(this.el.service, lane.office, lane.service);
+    [this.el.office, this.el.service, this.el.interval].forEach(enhanceSelect);
+
+    this.el.office.addEventListener("change", () =>
+      fillServices(this.el.service, this.el.office.value)
+    );
+    this.el.search.addEventListener("click", () => this.search());
+    this.el.close.addEventListener("click", () => this.close());
+    this.el.watch.addEventListener("click", () => this.toggleWatch());
+    this.el.mode.addEventListener("click", (e) => {
+      const button = e.target.closest("button[data-mode]");
+      if (!button) return;
+      this.mode = button.dataset.mode;
+      this.el.mode.querySelectorAll("button").forEach((b) =>
+        b.setAttribute("aria-selected", String(b === button))
+      );
+    });
+    const toggleFa = () => {
+      this.firstAvailable = !this.firstAvailable;
+      this.el.fa.setAttribute("aria-checked", String(this.firstAvailable));
+    };
+    this.el.fa.addEventListener("click", toggleFa);
+    this.el.fa.addEventListener("keydown", (e) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        toggleFa();
+      }
+    });
+  }
+
+  async search() {
+    // A second click while one is in flight would leave the button stuck on the
+    // first request's finally, and race two grids onto the same panel.
+    if (this.searching) return;
+    this.searching = true;
+    busy(this.el.search, true, "Buscando");
+    try {
+      const result = await api(`/api/lanes/${this.id}/search`, {
+        method: "POST",
+        body: JSON.stringify({
+          office: this.el.office.value,
+          service: this.el.service.value,
+          from_date: this.el.from.value || null,
+          first_available: this.firstAvailable,
+        }),
+      });
+      this.result = result;
+      this.renderGrid(result);
+      if (!result.slots.length) toast(`${this.el.office.value}: sin cupos en esa ventana.`);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      this.searching = false;
+      busy(this.el.search, false, "Buscar");
+      refresh();
+    }
+  }
+
+  async close() {
+    if (this.watching && !confirm("Ese carril está vigilando. ¿Cerrarlo igual?")) return;
+    try {
+      await api(`/api/lanes/${this.id}`, { method: "DELETE" });
+      refresh();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async toggleWatch() {
+    try {
+      if (this.watching) {
+        await api(`/api/lanes/${this.id}/watch`, { method: "DELETE" });
+        return refresh();
+      }
+      if (this.mode === "auto") {
+        const person = applicant();
+        if (["first_name", "last_name", "email", "phone"].some((f) => !person[f])) {
+          $("settings-scrim").hidden = false;
+          return toast("La reserva automática necesita todos los datos (Ajustes).", true);
+        }
+        const window = [this.el.timeFrom.value, this.el.timeTo.value].filter(Boolean).join(" – ");
+        const ok = confirm(
+          `Reservará una cita REAL sin preguntar.\n\n` +
+            `Oficina: ${this.el.office.value}\nTrámite: ${this.el.service.value}\n` +
+            `Horario permitido: ${window || "cualquiera"}\n` +
+            `A nombre de: ${person.first_name} ${person.last_name}\n\n¿Continuar?`
+        );
+        if (!ok) return;
+      }
+      await api(`/api/lanes/${this.id}/watch`, {
+        method: "POST",
+        body: JSON.stringify({
+          auto_book: this.mode === "auto",
+          interval: Number(this.el.interval.value),
+          date_from: this.el.from.value || null,
+          date_to: this.el.dateTo.value || null,
+          time_from: this.el.timeFrom.value || null,
+          time_to: this.el.timeTo.value || null,
+          applicant: applicant(),
+        }),
+      });
+      refresh();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async update(lane) {
+    const watch = lane.watch;
+    this.watching = watch.state === "watching";
+    this.office = lane.office;
+
+    this.el.session.textContent = lane.session.open
+      ? `sesión viva · expira en ${Math.floor(lane.session.expires_in / 60)} min`
+      : "sin sesión abierta";
+
+    this.el.watch.textContent = this.watching ? "Detener vigilancia" : "Iniciar vigilancia";
+    this.el.watch.classList.toggle("danger", this.watching);
+    this.root.classList.toggle("armed", this.watching && watch.auto_book);
+    [this.el.office, this.el.service, this.el.interval].forEach((s) =>
+      s.parentElement.classList.toggle("locked", this.watching)
+    );
+
+    this.el.banner.innerHTML = bannerFor(watch, this.el.timeFrom.value, this.el.timeTo.value);
+    this.el.log.innerHTML = watch.log
+      .slice()
+      .reverse()
+      .map((e) => `<div><time>${e.at}</time><span class="${e.level}">${e.text}</span></div>`)
+      .join("");
+
+    if (watch.result_seq !== undefined && watch.result_seq !== this.resultSeq) {
+      this.resultSeq = watch.result_seq;
+      if (watch.result_seq > 0) {
+        const result = await api(`/api/lanes/${this.id}/result`);
+        if (result.timetable?.length) {
+          this.result = result;
+          this.renderGrid(result, watch.found || []);
+        }
+      }
+    }
+
+    if (watch.state === "booked" && watch.booking && $("done-scrim").hidden) {
+      showDone(watch.booking);
+      toast(`${lane.office}: la vigilancia reservó una cita.`);
+    }
+  }
+
+  renderGrid(result, highlight = []) {
+    const hits = new Set(highlight.map((s) => s.raw));
+    this.el.count.textContent = result.slots.length;
+    this.el.at.textContent = result.at || "—";
+    this.el.lat.textContent = result.latency ? `${result.latency} s` : "—";
+
+    const columns = result.timetable || [];
+    if (!columns.length) {
+      this.el.grid.innerHTML =
+        '<div class="empty-state"><b>Sin horarios</b>El portal no devolvió calendario.</div>';
+      return;
+    }
+
+    this.el.grid.innerHTML = columns
+      .map((column) => {
+        const { weekday, date, isToday } = readTitle(column.title);
+        const head = `
+          <div class="col-head">
+            <div class="day">${weekday}${isToday ? '<span class="tag-today">HOY</span>' : ""}</div>
+            <div class="date">${date}</div>
+            <div class="n${column.available ? "" : " zero"}">${column.available} libres</div>
+          </div>`;
+        const body = column.closed
+          ? '<div class="cell shut">Cerrado</div>'
+          : column.cells
+              .map((cell) =>
+                cell.state === "free"
+                  ? `<button class="cell free${hits.has(cell.raw) ? " hit" : ""}" data-raw="${cell.raw}" aria-pressed="false">${cell.time}</button>`
+                  : '<div class="cell busy">Ocupado</div>'
+              )
+              .join("");
+        return `<div class="col">${head}${body}</div>`;
+      })
+      .join("");
+
+    this.el.grid.querySelectorAll(".cell.free").forEach((cell) =>
+      cell.addEventListener("click", () => openConfirm(this, cell.dataset.raw))
+    );
+  }
+}
+
+function bannerFor(watch, from, to) {
+  if (watch.state === "watching" && watch.auto_book) {
+    const window = [from, to].filter(Boolean).join(" y ");
+    return `<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo${
+      window ? ` entre ${window}` : ""
+    }</div>`;
+  }
+  if (watch.state === "watching") {
+    return `<div class="banner ok"><span class="dot ok live"></span>Vigilando${
+      watch.next_in ? ` — reintenta en ${watch.next_in} s` : ""
+    }</div>`;
+  }
+  if (watch.state === "booked" && watch.booking) {
+    return `<div class="banner ok">Cita ${watch.booking.appointment_number} reservada</div>`;
+  }
+  if (watch.state === "found") return '<div class="banner ok">Encontró cupo — mira la grilla</div>';
+  if (watch.state === "error") return '<div class="banner">Detenida por errores</div>';
+  return "";
+}
+
+// ------------------------------------------------------------------ pickers
+
+let OFFICES = [];
+const SERVICE_CACHE = new Map();
+
+function fillOffices(select, selected) {
+  select.innerHTML = OFFICES.length
+    ? OFFICES.map((o) => `<option${o.name === selected ? " selected" : ""}>${o.name}</option>`).join("")
+    : "<option>cargando…</option>";
+}
+
+async function fillServices(select, office, selected) {
+  const cached = SERVICE_CACHE.get(office);
+  const paint = (list) => {
+    select.innerHTML = list.map((s) => `<option>${s.name}</option>`).join("");
+    const want = list.find((s) => s.name === (selected || "Title Companies and Runners"));
+    if (want) select.value = want.name;
+    select.dispatchEvent(new Event("change", { bubbles: false }));
+  };
+  if (cached) return paint(cached);
+
+  select.innerHTML = "<option>cargando…</option>";
+  try {
+    const { services } = await api(`/api/services?office=${encodeURIComponent(office)}`);
+    SERVICE_CACHE.set(office, services);
+    paint(services);
+  } catch (error) {
+    select.innerHTML = "<option>error</option>";
+    toast(error.message, true);
+  }
+}
 
 async function loadOffices() {
-  const select = $("office");
-  select.innerHTML = `<option>cargando…</option>`;
   try {
-    const { offices } = await api("/api/offices");
-    select.innerHTML = offices
-      .map((o) => `<option value="${o.name}"${o.name === "Houston North" ? " selected" : ""}>${o.name}</option>`)
-      .join("");
-    await loadServices();
+    OFFICES = (await api("/api/offices")).offices;
+    panels.forEach((p) => fillOffices(p.el.office, p.office));
   } catch (error) {
-    select.innerHTML = `<option>error</option>`;
     toast(error.message, true);
   }
 }
 
-async function loadServices() {
-  const select = $("service");
-  select.innerHTML = `<option>cargando…</option>`;
+async function addLane() {
   try {
-    const { services } = await api(`/api/services?office=${encodeURIComponent($("office").value)}`);
-    select.innerHTML = services.map((s) => `<option value="${s.name}">${s.name}</option>`).join("");
-    const preferred = services.find((s) => s.name === "Title Companies and Runners");
-    if (preferred) select.value = preferred.name;
-  } catch (error) {
-    select.innerHTML = `<option>error</option>`;
-    toast(error.message, true);
-  }
-}
-
-// ------------------------------------------------------------------- grid
-
-// The portal labels its columns in English ("Sunday 6 September"); the UI is Spanish.
-const WEEKDAYS = {sunday:"DOM", monday:"LUN", tuesday:"MAR", wednesday:"MIÉ",
-                  thursday:"JUE", friday:"VIE", saturday:"SÁB"};
-const MONTHS = {january:"ene", february:"feb", march:"mar", april:"abr", may:"may",
-                june:"jun", july:"jul", august:"ago", september:"sep", october:"oct",
-                november:"nov", december:"dic"};
-const MONTH_INDEX = Object.keys(MONTHS);
-
-function readTitle(title) {
-  const [weekday, day, month] = (title || "").trim().split(/\s+/);
-  const monthKey = (month || "").toLowerCase();
-  const today = new Date();
-  return {
-    weekday: WEEKDAYS[(weekday || "").toLowerCase()] || (weekday || "").slice(0, 3).toUpperCase(),
-    date: day && monthKey ? `${day} ${MONTHS[monthKey] || monthKey}` : "—",
-    isToday:
-      Number(day) === today.getDate() && MONTH_INDEX.indexOf(monthKey) === today.getMonth(),
-  };
-}
-
-function renderGrid(result, highlight = []) {
-  const hits = new Set(highlight.map((s) => s.raw));
-  const grid = $("grid");
-  const columns = result.timetable || [];
-  $("slot-count").textContent = result.slots.length;
-  $("m-at").textContent = result.at || "—";
-  $("m-lat").textContent = result.latency ? `${result.latency} s` : "—";
-
-  if (!columns.length) {
-    grid.innerHTML = `<div class="empty-state"><b>Sin horarios</b>El portal no devolvió calendario para esa búsqueda.</div>`;
-    return;
-  }
-
-  grid.innerHTML = columns
-    .map((column) => {
-      const { weekday, date, isToday } = readTitle(column.title);
-      const head = `
-        <div class="col-head">
-          <div class="day">${weekday}${isToday ? '<span class="tag-today">HOY</span>' : ""}</div>
-          <div class="date">${date}</div>
-          <div class="n${column.available ? "" : " zero"}">${column.available} libres</div>
-        </div>`;
-
-      const body = column.closed
-        ? `<div class="cell shut">Cerrado</div>`
-        : column.cells
-            .map((cell) =>
-              cell.state === "free"
-                ? `<button class="cell free${hits.has(cell.raw) ? " hit" : ""}" data-raw="${cell.raw}" aria-pressed="false">${cell.time}</button>`
-                : `<div class="cell busy">Ocupado</div>`
-            )
-            .join("");
-
-      return `<div class="col">${head}${body}</div>`;
-    })
-    .join("");
-
-  grid.querySelectorAll(".cell.free").forEach((cell) => {
-    cell.addEventListener("click", () => openConfirm(cell.dataset.raw));
-  });
-}
-
-async function search() {
-  const button = $("search-btn");
-  busy(button, true, "Buscando");
-  try {
-    lastSearch = await api("/api/search", {
+    const office = OFFICES.length ? OFFICES[8]?.name || OFFICES[0].name : "Houston North";
+    await api("/api/lanes", {
       method: "POST",
-      body: JSON.stringify({
-        office: $("office").value,
-        service: $("service").value,
-        from_date: $("from-date").value || null,
-        first_available: firstAvailable,
-      }),
+      body: JSON.stringify({ office, service: "Title Companies and Runners" }),
     });
-    renderGrid(lastSearch);
-    if (!lastSearch.slots.length) toast("Sin cupos en esa ventana.");
-    refreshState();
+    await refresh();
   } catch (error) {
     toast(error.message, true);
-  } finally {
-    busy(button, false, "Buscar");
   }
 }
 
 // ---------------------------------------------------------------- booking
 
+let pending = null;
+
 function summaryRows(rows) {
   return rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v || "—"}</dd></div>`).join("");
 }
 
-function openConfirm(raw) {
-  const slot = (lastSearch?.slots || []).find((s) => s.raw === raw);
+function openConfirm(panel, raw) {
+  const slot = (panel.result?.slots || []).find((s) => s.raw === raw);
   if (!slot) return toast("Ese horario ya no está en la lista. Busca de nuevo.", true);
 
   const person = applicant();
-  const missing = ["first_name", "last_name", "email", "phone"].filter((f) => !person[f]);
-  if (missing.length) {
+  if (["first_name", "last_name", "email", "phone"].some((f) => !person[f])) {
     $("settings-scrim").hidden = false;
     return toast("Completa los datos del solicitante en Ajustes.", true);
   }
 
-  selected = slot;
-  document.querySelectorAll(".cell.free").forEach((c) =>
+  pending = { panel, slot };
+  panel.el.grid.querySelectorAll(".cell.free").forEach((c) =>
     c.setAttribute("aria-pressed", String(c.dataset.raw === raw))
   );
   $("cf-summary").innerHTML = summaryRows([
     ["Horario", slot.label || `${slot.date} ${slot.time}`],
-    ["Oficina", $("office").value],
-    ["Trámite", $("service").value],
+    ["Oficina", panel.el.office.value],
+    ["Trámite", panel.el.service.value],
     ["Nombre", `${person.first_name} ${person.last_name}`],
     ["Correo", person.email],
     ["Teléfono", person.phone],
@@ -358,9 +580,9 @@ async function confirmBooking() {
   const button = $("cf-ok");
   busy(button, true, "Reservando");
   try {
-    const details = await api("/api/book", {
+    const details = await api(`/api/lanes/${pending.panel.id}/book`, {
       method: "POST",
-      body: JSON.stringify({ raw: selected.raw, applicant: applicant() }),
+      body: JSON.stringify({ raw: pending.slot.raw, applicant: applicant() }),
     });
     $("confirm-scrim").hidden = true;
     showDone(details);
@@ -368,6 +590,7 @@ async function confirmBooking() {
     toast(error.message, true);
   } finally {
     busy(button, false, "Reservar ahora");
+    refresh();
   }
 }
 
@@ -380,127 +603,6 @@ function showDone(details) {
     ["Personas", "1"],
   ]);
   $("done-scrim").hidden = false;
-  refreshState();
-}
-
-// ---------------------------------------------------------------- watching
-
-function watchConfig() {
-  return {
-    office: $("office").value,
-    service: $("service").value,
-    auto_book: mode === "auto",
-    interval: Number($("w-interval").value),
-    date_from: $("w-date-from").value || null,
-    date_to: $("w-date-to").value || null,
-    time_from: $("w-time-from").value || null,
-    time_to: $("w-time-to").value || null,
-    first_available: firstAvailable,
-    applicant: applicant(),
-  };
-}
-
-function renderWatch(status) {
-  const card = $("watch-card");
-  const button = $("watch-btn");
-  const running = status.state === "watching";
-
-  card.classList.toggle("armed", running && status.auto_book);
-  button.textContent = running ? "Detener vigilancia" : "Iniciar vigilancia";
-  button.classList.toggle("danger", running);
-
-  const banner = $("watch-banner");
-  if (running && status.auto_book) {
-    const window = [$("w-time-from").value, $("w-time-to").value].filter(Boolean).join(" y ");
-    banner.innerHTML = `<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará automáticamente el primer cupo${
-      window ? ` entre ${window}` : ""
-    }</div>`;
-  } else if (running) {
-    banner.innerHTML = `<div class="banner ok"><span class="dot ok live"></span>Vigilando — solo avisará${
-      status.next_in ? `, reintenta en ${status.next_in} s` : ""
-    }</div>`;
-  } else if (status.state === "booked" && status.booking) {
-    banner.innerHTML = `<div class="banner ok">Cita ${status.booking.appointment_number} reservada</div>`;
-  } else if (status.state === "found") {
-    banner.innerHTML = `<div class="banner ok">Encontró cupo — revisa la grilla</div>`;
-  } else if (status.state === "error") {
-    banner.innerHTML = `<div class="banner">Vigilancia detenida por errores</div>`;
-  } else {
-    banner.innerHTML = "";
-  }
-
-  $("watch-log").innerHTML = status.log
-    .slice()
-    .reverse()
-    .map((e) => `<div><time>${e.at}</time><span class="${e.level}">${e.text}</span></div>`)
-    .join("");
-
-  if (running && !watchTimer) watchTimer = setInterval(pollWatch, 2000);
-  if (!running && watchTimer) {
-    clearInterval(watchTimer);
-    watchTimer = null;
-  }
-}
-
-async function pollWatch() {
-  try {
-    const status = await api("/api/watch/status");
-    renderWatch(status);
-
-    // Show the grid the watcher itself pulled - no second search, so nothing is
-    // missed between its poll and ours.
-    if (status.result_seq !== undefined && status.result_seq !== lastResultSeq) {
-      lastResultSeq = status.result_seq;
-      if (status.result_seq > 0) {
-        const result = await api("/api/watch/result");
-        if (result.timetable?.length) {
-          lastSearch = result;
-          renderGrid(result, status.found || []);
-        }
-      }
-    }
-
-    if (status.state === "found" && status.found?.length) {
-      const hit = status.found[0];
-      toast(`Cupo encontrado: ${hit.label || hit.raw}`);
-    }
-    if (status.state === "booked" && status.booking && $("done-scrim").hidden) {
-      showDone(status.booking);
-      toast("La vigilancia reservó una cita.");
-    }
-  } catch (_) {}
-}
-
-async function toggleWatch() {
-  const button = $("watch-btn");
-  const running = button.textContent.startsWith("Detener");
-  try {
-    if (running) {
-      renderWatch(await api("/api/watch/stop", { method: "POST" }));
-      return;
-    }
-    if (mode === "auto") {
-      const person = applicant();
-      const missing = ["first_name", "last_name", "email", "phone"].filter((f) => !person[f]);
-      if (missing.length) {
-        $("settings-scrim").hidden = false;
-        return toast("La reserva automática necesita todos los datos (Ajustes).", true);
-      }
-      const window = [$("w-time-from").value, $("w-time-to").value].filter(Boolean).join(" – ");
-      const ok = confirm(
-        `Reservará una cita REAL sin preguntar.\n\n` +
-          `Oficina: ${$("office").value}\nTrámite: ${$("service").value}\n` +
-          `Horario permitido: ${window || "cualquiera"}\nA nombre de: ${person.first_name} ${person.last_name}\n\n` +
-          `¿Continuar?`
-      );
-      if (!ok) return;
-    }
-    renderWatch(
-      await api("/api/watch/start", { method: "POST", body: JSON.stringify(watchConfig()) })
-    );
-  } catch (error) {
-    toast(error.message, true);
-  }
 }
 
 // ------------------------------------------------------------------ settings
@@ -529,7 +631,7 @@ async function saveSettings() {
     );
     toast("Ajustes guardados.");
     $("settings-scrim").hidden = true;
-    refreshState();
+    refresh();
   } catch (error) {
     toast(error.message, true);
   }
@@ -537,17 +639,20 @@ async function saveSettings() {
 
 // ------------------------------------------------------------------- wiring
 
-function init() {
-  ["office", "service", "w-interval"].forEach((id) => enhanceSelect($(id)));
-  $("from-date").value = isoToday();
-  $("w-date-from").value = isoToday();
+async function init() {
   loadApplicant();
   APPLICANT_FIELDS.forEach((f) => $(f).addEventListener("change", saveApplicant));
 
-  $("search-btn").addEventListener("click", search);
+  $("add-lane").addEventListener("click", addLane);
   $("settings-btn").addEventListener("click", () => ($("settings-scrim").hidden = false));
   $("st-close").addEventListener("click", () => ($("settings-scrim").hidden = true));
   $("st-save").addEventListener("click", saveSettings);
+  $("cf-cancel").addEventListener("click", () => ($("confirm-scrim").hidden = true));
+  $("cf-ok").addEventListener("click", confirmBooking);
+  $("dn-close").addEventListener("click", () => ($("done-scrim").hidden = true));
+  $("dn-copy").addEventListener("click", () =>
+    navigator.clipboard?.writeText($("dn-number").textContent).then(() => toast("Número copiado."))
+  );
 
   const proxySwitch = $("proxy-switch");
   const toggleProxy = () => {
@@ -562,56 +667,21 @@ function init() {
       toggleProxy();
     }
   });
-  $("office").addEventListener("change", loadServices);
-  $("watch-btn").addEventListener("click", toggleWatch);
-  $("cf-cancel").addEventListener("click", () => ($("confirm-scrim").hidden = true));
-  $("cf-ok").addEventListener("click", confirmBooking);
-  $("dn-close").addEventListener("click", () => {
-    $("done-scrim").hidden = true;
-    search();
-  });
-  $("dn-copy").addEventListener("click", () => {
-    navigator.clipboard?.writeText($("dn-number").textContent).then(() => toast("Número copiado."));
-  });
-
-  const fa = $("fa-switch");
-  const toggleFa = () => {
-    firstAvailable = !firstAvailable;
-    fa.setAttribute("aria-checked", String(firstAvailable));
-  };
-  fa.addEventListener("click", toggleFa);
-  fa.addEventListener("keydown", (e) => {
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      toggleFa();
-    }
-  });
-
-  $("mode-seg").addEventListener("click", (e) => {
-    const button = e.target.closest("button[data-mode]");
-    if (!button) return;
-    mode = button.dataset.mode;
-    $("mode-seg")
-      .querySelectorAll("button")
-      .forEach((b) => b.setAttribute("aria-selected", String(b === button)));
-  });
 
   document.addEventListener("keydown", (e) => {
     if (e.target.matches("input,select,textarea")) return;
-    if (e.key === "r") search();
-    if (e.key === "v") toggleWatch();
     if (e.key === "s") $("settings-scrim").hidden = false;
+    if (e.key === "n") addLane();
     if (e.key === "Escape") {
-      $("confirm-scrim").hidden = true;
-      $("done-scrim").hidden = true;
-      $("settings-scrim").hidden = true;
+      ["confirm-scrim", "done-scrim", "settings-scrim"].forEach((id) => ($(id).hidden = true));
     }
   });
 
-  loadOffices();
-  refreshState();
-  pollWatch();
-  setInterval(refreshState, 5000);
+  await loadOffices();
+  await refresh();
+  if (!panels.size) await addLane();
+
+  setInterval(refresh, 2500);
   setInterval(() => fetch("/api/keepalive", { method: "POST" }).catch(() => {}), 5 * 60 * 1000);
 }
 

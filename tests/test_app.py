@@ -1,9 +1,10 @@
-"""API layer, with the wizard session stubbed out. No network."""
+"""API layer over lanes, with portal sessions stubbed out. No network."""
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app as web
+from lanes import LaneManager
 
 APPLICANT = {
     "first_name": "Marisol",
@@ -15,8 +16,9 @@ APPLICANT = {
 
 class StubSession:
     def __init__(self):
-        self.booked = []
         self.searches = []
+        self.booked = []
+        self.last_search = None
 
     def status(self):
         return {"open": True, "age_seconds": 12, "expires_in": 2400, "proxy": None, "direct": True}
@@ -29,7 +31,9 @@ class StubSession:
 
     def search(self, office, service, from_date=None, first_available=False):
         self.searches.append((office, service, from_date, first_available))
-        return {"slots": [], "timetable": [], "latency": 0.4, "at": "11:00:00"}
+        self.last_search = {"slots": [], "timetable": [], "latency": 0.4, "at": "11:00:00",
+                            "office": office}
+        return self.last_search
 
     def book(self, raw, applicant):
         self.booked.append((raw, applicant))
@@ -41,23 +45,28 @@ class StubSession:
 
 @pytest.fixture
 def client(monkeypatch):
-    stub = StubSession()
-    monkeypatch.setattr(web, "session", stub)
-    monkeypatch.setattr(web.watcher, "session", stub)
-    web.watcher.stop()
+    monkeypatch.setattr(web, "lanes", LaneManager(StubSession, max_lanes=2))
+    monkeypatch.setattr(web, "_picker_session", StubSession())
     with TestClient(web.app) as c:
-        c.stub = stub
         yield c
-    web.watcher.stop()
+    web.lanes.close_all()
 
 
-def test_state_reports_a_direct_connection(client):
+def make_lane(client, office="Houston North", service="Title Companies and Runners"):
+    return client.post("/api/lanes", json={"office": office, "service": service}).json()
+
+
+# --------------------------------------------------------------------- state
+
+
+def test_state_starts_with_no_lanes(client):
     body = client.get("/api/state").json()
-    assert body["session"]["direct"] is True
-    assert body["watch"]["state"] == "idle"
+    assert body["lanes"] == []
+    assert body["max_lanes"] == 2
+    assert body["settings"]["use_proxy"] is False
 
 
-def test_offices_are_listed(client):
+def test_offices_come_from_the_picker_session(client):
     names = [o["name"] for o in client.get("/api/offices").json()["offices"]]
     assert "Houston North" in names
 
@@ -67,94 +76,159 @@ def test_services_are_scoped_to_the_office(client):
     assert body["services"][0]["id"] == "1275"
 
 
-def test_search_passes_the_form_through(client):
-    client.post("/api/search", json={"office": "Houston South", "service": "X", "from_date": "2026-09-08"})
-    assert client.stub.searches[-1] == ("Houston South", "X", "2026-09-08", False)
+# --------------------------------------------------------------------- lanes
 
 
-# --------------------------------------------------------------- book guards
+def test_a_lane_can_be_created(client):
+    lane = make_lane(client)
+    assert lane["office"] == "Houston North"
+    assert lane["watch"]["state"] == "idle"
 
 
-def test_booking_without_personal_data_is_refused(client):
-    response = client.post("/api/book", json={"raw": "9/8/2026 9:00:00 AM", "applicant": {}})
-    assert response.status_code == 400
-    assert client.stub.booked == []
-
-
-def test_booking_with_data_goes_through(client):
-    response = client.post(
-        "/api/book", json={"raw": "9/8/2026 9:00:00 AM", "applicant": APPLICANT}
-    )
-    assert response.status_code == 200
-    assert response.json()["appointment_number"] == "1881183439"
-    assert client.stub.booked[0][0] == "9/8/2026 9:00:00 AM"
-
-
-def test_a_stale_slot_is_reported_as_a_conflict(client, monkeypatch):
-    def gone(raw, applicant):
-        raise web.SessionExpired("ya no está")
-
-    monkeypatch.setattr(client.stub, "book", gone)
-    response = client.post("/api/book", json={"raw": "x", "applicant": APPLICANT})
+def test_two_lanes_fit_and_a_third_does_not(client):
+    make_lane(client, "Houston North")
+    make_lane(client, "Houston South")
+    response = client.post("/api/lanes", json={"office": "Austin", "service": "X"})
     assert response.status_code == 409
 
 
-# -------------------------------------------------------------- watch guards
+def test_a_lane_can_be_removed_and_replaced(client):
+    lane = make_lane(client)
+    make_lane(client, "Houston South")
+    client.delete(f"/api/lanes/{lane['id']}")
+    assert client.post("/api/lanes", json={"office": "Austin", "service": "X"}).status_code == 200
+
+
+def test_acting_on_an_unknown_lane_is_a_404(client):
+    assert client.post("/api/lanes/99/search", json={}).status_code == 404
+
+
+def test_searching_one_lane_does_not_touch_the_other(client):
+    a = make_lane(client, "Houston North")
+    b = make_lane(client, "Houston South")
+
+    client.post(f"/api/lanes/{a['id']}/search", json={})
+
+    lane_a, lane_b = web.lanes.get(a["id"]), web.lanes.get(b["id"])
+    assert lane_a.session.searches and not lane_b.session.searches
+
+
+def test_search_result_carries_the_lanes_office(client):
+    lane = make_lane(client, "Houston South")
+    body = client.post(f"/api/lanes/{lane['id']}/search", json={}).json()
+    assert body["office"] == "Houston South"
+
+
+def test_a_lane_remembers_a_changed_target(client):
+    lane = make_lane(client)
+    client.post(f"/api/lanes/{lane['id']}/search",
+                json={"office": "Austin", "service": "Y", "from_date": "2026-09-08"})
+    assert web.lanes.get(lane["id"]).office == "Austin"
+
+
+def test_result_endpoint_is_empty_before_searching(client):
+    lane = make_lane(client)
+    body = client.get(f"/api/lanes/{lane['id']}/result").json()
+    assert body["slots"] == []
+
+
+# ------------------------------------------------------------------- booking
+
+
+def test_booking_without_personal_data_is_refused(client):
+    lane = make_lane(client)
+    response = client.post(f"/api/lanes/{lane['id']}/book",
+                           json={"raw": "9/8/2026 9:00:00 AM", "applicant": {}})
+    assert response.status_code == 400
+    assert web.lanes.get(lane["id"]).session.booked == []
+
+
+def test_each_lane_books_on_its_own_session(client):
+    a = make_lane(client, "Houston North")
+    b = make_lane(client, "Houston South")
+
+    client.post(f"/api/lanes/{a['id']}/book",
+                json={"raw": "9/8/2026 9:00:00 AM", "applicant": APPLICANT})
+
+    assert web.lanes.get(a["id"]).session.booked
+    assert not web.lanes.get(b["id"]).session.booked
+
+
+def test_both_lanes_can_book_in_parallel(client):
+    a = make_lane(client, "Houston North")
+    b = make_lane(client, "Houston South")
+
+    for lane, raw in ((a, "9/8/2026 9:00:00 AM"), (b, "9/9/2026 2:30:00 PM")):
+        assert client.post(f"/api/lanes/{lane['id']}/book",
+                           json={"raw": raw, "applicant": APPLICANT}).status_code == 200
+
+    assert web.lanes.get(a["id"]).session.booked[0][0] == "9/8/2026 9:00:00 AM"
+    assert web.lanes.get(b["id"]).session.booked[0][0] == "9/9/2026 2:30:00 PM"
+
+
+# -------------------------------------------------------------------- watch
 
 
 def test_auto_book_without_personal_data_is_refused(client):
-    response = client.post(
-        "/api/watch/start",
-        json={"office": "Houston North", "service": "X", "auto_book": True, "applicant": {}},
-    )
+    lane = make_lane(client)
+    response = client.post(f"/api/lanes/{lane['id']}/watch",
+                           json={"auto_book": True, "applicant": {}})
     assert response.status_code == 400
-    assert web.watcher.status()["state"] == "idle"
+    assert web.lanes.get(lane["id"]).watcher.status()["state"] == "idle"
 
 
 def test_notify_mode_starts_without_personal_data(client):
-    response = client.post(
-        "/api/watch/start",
-        json={"office": "Houston North", "service": "X", "auto_book": False, "applicant": {}},
-    )
-    assert response.status_code == 200
-    assert response.json()["state"] == "watching"
-    assert response.json()["auto_book"] is False
+    lane = make_lane(client)
+    body = client.post(f"/api/lanes/{lane['id']}/watch",
+                       json={"auto_book": False, "applicant": {}}).json()
+    assert body["watch"]["state"] == "watching"
+    assert body["watch"]["auto_book"] is False
 
 
-def test_auto_book_with_data_arms_the_watcher(client):
-    response = client.post(
-        "/api/watch/start",
-        json={"office": "Houston North", "service": "X", "auto_book": True,
-              "interval": 60, "applicant": APPLICANT},
-    )
-    assert response.json()["auto_book"] is True
+def test_a_watch_inherits_its_lanes_target(client):
+    lane = make_lane(client, "Houston South", "All other transactions")
+    body = client.post(f"/api/lanes/{lane['id']}/watch", json={"applicant": {}}).json()
+    assert body["watch"]["office"] == "Houston South"
+    assert body["watch"]["service"] == "All other transactions"
 
 
-def test_stopping_returns_to_idle(client):
-    client.post("/api/watch/start", json={"office": "A", "service": "B", "applicant": {}})
-    assert client.post("/api/watch/stop").json()["state"] == "idle"
+def test_watching_one_lane_leaves_the_other_idle(client):
+    a = make_lane(client, "Houston North")
+    b = make_lane(client, "Houston South")
+
+    client.post(f"/api/lanes/{a['id']}/watch", json={"applicant": {}})
+
+    states = {l["id"]: l["watch"]["state"] for l in client.get("/api/lanes").json()["lanes"]}
+    assert states[a["id"]] == "watching" and states[b["id"]] == "idle"
+
+
+def test_both_lanes_can_watch_at_once(client):
+    a = make_lane(client, "Houston North")
+    b = make_lane(client, "Houston South")
+    for lane in (a, b):
+        client.post(f"/api/lanes/{lane['id']}/watch", json={"applicant": {}})
+
+    states = [l["watch"]["state"] for l in client.get("/api/lanes").json()["lanes"]]
+    assert states == ["watching", "watching"]
+
+
+def test_a_watch_can_be_stopped(client):
+    lane = make_lane(client)
+    client.post(f"/api/lanes/{lane['id']}/watch", json={"applicant": {}})
+    body = client.delete(f"/api/lanes/{lane['id']}/watch").json()
+    assert body["watch"]["state"] == "idle"
 
 
 # ------------------------------------------------------------------ settings
 
 
 def test_the_proxy_is_off_by_default(client):
-    body = client.get("/api/settings").json()
-    assert body["use_proxy"] is False
-
-
-def test_settings_report_whether_a_proxy_is_even_configured(client):
-    assert "proxy_configured" in client.get("/api/settings").json()
-
-
-def test_state_carries_the_settings(client):
-    assert client.get("/api/state").json()["settings"]["use_proxy"] is False
+    assert client.get("/api/settings").json()["use_proxy"] is False
 
 
 def test_turning_the_proxy_on_without_credentials_is_refused(client, monkeypatch):
     monkeypatch.setattr(web.webshare, "is_configured", lambda *a, **k: False)
-    response = client.post("/api/settings", json={"use_proxy": True})
-    assert response.status_code == 400
+    assert client.post("/api/settings", json={"use_proxy": True}).status_code == 400
     assert web.USE_PROXY is False
 
 
@@ -162,36 +236,11 @@ def test_the_applicant_default_service_is_title_services(client):
     assert web.Applicant().description == "Title Services"
 
 
-# ------------------------------------------------------- watcher grid publish
-
-
-def test_watch_result_is_empty_before_any_poll(client):
-    body = client.get("/api/watch/result").json()
-    assert body["slots"] == [] and body["timetable"] == []
-
-
-def test_watch_status_exposes_a_result_sequence(client):
-    assert isinstance(client.get("/api/watch/status").json()["result_seq"], int)
-
-
-def test_the_grid_the_watcher_saw_is_published(client):
-    # The sequence is deliberately monotonic across runs, so the UI never sees the
-    # same number twice and can tell "new grid" from "same grid".
-    before = client.get("/api/watch/status").json()["result_seq"]
-    web.watcher.arm({"office": "Houston North", "service": "X", "applicant": {}})
-    web.watcher.tick()
-
-    assert client.get("/api/watch/status").json()["result_seq"] == before + 1
-    assert client.get("/api/watch/result").json()["at"] == "11:00:00"
-
-
 # --------------------------------------------------------------------- page
 
 
 def test_the_page_is_served(client):
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "APPOINTMENT DESK" in response.text
+    assert "APPOINTMENT DESK" in client.get("/").text
 
 
 def test_the_script_is_served(client):
