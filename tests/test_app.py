@@ -195,12 +195,20 @@ def test_a_watch_without_filters_accepts_any_slot(client):
     assert config["time_from"] is None and config["date_to"] is None
 
 
-def test_a_watch_carries_the_from_time_floor(client):
+def test_a_watch_carries_the_time_window(client):
     lane = lane_ids(client)[0]
     body = client.post(f"/api/lanes/{lane}/watch",
-                       json={"applicant": {}, "time_from": "10:30"}).json()
-    assert web.lanes.get(lane).watcher.config["time_from"] == "10:30"
-    assert body["watch"]["time_from"] == "10:30"
+                       json={"applicant": {}, "time_from": "10:30", "time_to": "15:00"}).json()
+    config = web.lanes.get(lane).watcher.config
+    assert (config["time_from"], config["time_to"]) == ("10:30", "15:00")
+    assert (body["watch"]["time_from"], body["watch"]["time_to"]) == ("10:30", "15:00")
+
+
+def test_either_end_of_the_window_may_be_omitted(client):
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}, "time_to": "12:00"})
+    config = web.lanes.get(lane).watcher.config
+    assert config["time_from"] is None and config["time_to"] == "12:00"
 
 
 def test_watching_one_lane_leaves_the_other_idle(client):

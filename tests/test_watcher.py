@@ -193,10 +193,25 @@ def test_status_reports_the_floor_it_is_running_with():
     assert watcher.status()["time_from"] == "10:00"
 
 
-def test_status_reports_no_floor_when_none_was_set():
+def test_status_reports_no_window_when_none_was_set():
     watcher = Watcher(FakeSession([[]]))
     watcher.arm(config())
-    assert watcher.status()["time_from"] is None
+    status = watcher.status()
+    assert status["time_from"] is None and status["time_to"] is None
+
+
+def test_status_reports_the_ceiling_it_is_running_with():
+    watcher = Watcher(FakeSession([[]]))
+    watcher.arm(config(time_to="15:00"))
+    assert watcher.status()["time_to"] == "15:00"
+
+
+def test_a_ceiling_alone_still_filters():
+    session = FakeSession([[slot("2026-09-09", "16:00"), slot("2026-09-09", "10:15")]])
+    watcher = Watcher(session)
+    watcher.arm(config(auto_book=True, time_to="15:00"))
+    watcher.tick()
+    assert session.booked == ["2026-09-09 10:15"]
 
 
 def test_a_floor_alone_still_filters():

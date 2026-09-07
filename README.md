@@ -36,11 +36,11 @@ Python 3.10+; la primera vez crea el entorno e instala las dependencias solo.
   se detiene; hay que armarlo a propósito y confirmar, nunca arranca así. Los dos
   carriles pueden vigilar y reservar al mismo tiempo.
 
-  El único filtro es **desde qué hora**: aunque la ventana sean tres días, una
-  cita a las 9:00 no sirve si no llegas antes de las 10. Vacío significa cualquier
-  hora. Acotar por fecha o por hora tope no aportaba dentro de una lista de tres
-  días, así que no está en la interfaz; el watcher sigue aceptándolos por API
-  (`date_from`, `date_to`, `time_to`).
+  Se acota por **franja horaria**: desde qué hora y hasta qué hora. Cualquiera de
+  los dos extremos puede ir vacío, y ambos vacíos significa cualquier hora. Los
+  límites son inclusivos. Acotar por fecha no aporta dentro de una lista de tres
+  días, así que no está en la interfaz; el watcher lo sigue aceptando por API
+  (`date_from`, `date_to`).
 - Atajos: `s` ajustes, `Esc` cerrar.
 
 La sesión del portal se mantiene viva entre peticiones, igual que en el CLI: elegir
@@ -168,4 +168,4 @@ Candidates that fail a live country check are skipped before the flow starts.
 python3 -m pytest -q
 ```
 
-142 tests, no network - they run against the captured pages in `fixtures/`.
+145 tests, no network - they run against the captured pages in `fixtures/`.

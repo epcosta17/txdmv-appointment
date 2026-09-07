@@ -271,7 +271,7 @@ class LanePanel {
       session: q(".js-session"), count: q(".js-count"), grid: q(".js-grid"),
       at: q(".js-at"), lat: q(".js-lat"), banner: q(".js-banner"), mode: q(".js-mode"),
       interval: q(".js-interval"), timeFrom: q(".js-time-from"),
-      watch: q(".js-watch"), log: q(".js-log"),
+      timeTo: q(".js-time-to"), watch: q(".js-watch"), log: q(".js-log"),
     };
 
     this.el.from.value = isoToday();
@@ -354,7 +354,7 @@ class LanePanel {
             summaryBlock([
               ["Oficina", this.el.office.value],
               ["Trámite", this.el.service.value],
-              ["No antes de", this.el.timeFrom.value || "cualquier hora"],
+              ["Franja horaria", windowText(this.el.timeFrom.value, this.el.timeTo.value) || "cualquier hora"],
               ["A nombre de", `${person.first_name} ${person.last_name}`],
               ["Correo", person.email],
             ]),
@@ -366,8 +366,9 @@ class LanePanel {
         body: JSON.stringify({
           auto_book: this.mode === "auto",
           interval: Number(this.el.interval.value),
-          // Empty means no floor - the watcher then takes the earliest opening.
+          // Either end may be empty; an empty bound simply is not applied.
           time_from: this.el.timeFrom.value || null,
+          time_to: this.el.timeTo.value || null,
           applicant: applicant(),
         }),
       });
@@ -460,15 +461,24 @@ class LanePanel {
   }
 }
 
+/** "entre 09:00 y 15:00", "desde las 09:00", "hasta las 15:00", or "". */
+function windowText(from, to) {
+  if (from && to) return `entre ${from} y ${to}`;
+  if (from) return `desde las ${from}`;
+  if (to) return `hasta las ${to}`;
+  return "";
+}
+
 function bannerFor(watch) {
-  // Read the floor from the running watch, not from the input: the operator may
-  // have edited the field after starting, and the banner must not lie about it.
-  const floor = watch.time_from ? ` desde las ${watch.time_from}` : "";
+  // Read the window from the running watch, not from the inputs: the operator may
+  // have edited them after starting, and the banner must not lie about it.
+  const span = windowText(watch.time_from, watch.time_to);
+  const suffix = span ? ` ${span}` : "";
   if (watch.state === "watching" && watch.auto_book) {
-    return `<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo${floor}</div>`;
+    return `<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo${suffix}</div>`;
   }
   if (watch.state === "watching") {
-    return `<div class="banner ok"><span class="dot ok live"></span>Vigilando${floor}${
+    return `<div class="banner ok"><span class="dot ok live"></span>Vigilando${suffix}${
       watch.next_in ? ` — reintenta en ${watch.next_in} s` : ""
     }</div>`;
   }
