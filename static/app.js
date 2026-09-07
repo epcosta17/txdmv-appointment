@@ -12,7 +12,9 @@ let selected = null;
 let firstAvailable = false;
 let mode = "notify";
 let watchTimer = null;
-let useProxy = false;
+let useProxy = false;        // what the switch shows, including unsaved edits
+let serverUseProxy = false;  // what the server is actually running with
+let proxyDirty = false;      // the switch was toggled and not saved yet
 let proxyConfigured = false;
 let lastResultSeq = -1;
 
@@ -210,6 +212,11 @@ async function refresh() {
     const state = await api("/api/state");
     applySettings(state.settings);
     syncLanes(state);
+    // A failed first load would otherwise leave every office dropdown stuck on
+    // "cargando…" forever, since nothing else reloads it.
+    if (!OFFICES.length && Date.now() - officesTriedAt > OFFICES_RETRY_MS) {
+      loadOffices({ quiet: true });
+    }
     var loaded = state;
     $("conn").textContent = state.settings.use_proxy ? "PROXY" : "DIRECTO";
     $("conn-dot").className = "dot " + (state.settings.use_proxy ? "accent" : "");
@@ -498,7 +505,10 @@ function bannerFor(watch) {
 // ------------------------------------------------------------------ pickers
 
 let OFFICES = [];
+let officesLoading = false;
+let officesTriedAt = 0;
 const SERVICE_CACHE = new Map();
+const OFFICES_RETRY_MS = 15000;
 
 function fillOffices(select, selected) {
   select.innerHTML = OFFICES.length
@@ -527,12 +537,23 @@ async function fillServices(select, office, selected) {
   }
 }
 
-async function loadOffices() {
+async function loadOffices({ quiet = false } = {}) {
+  if (officesLoading) return;
+  officesLoading = true;
+  officesTriedAt = Date.now();
   try {
     OFFICES = (await api("/api/offices")).offices;
-    panels.forEach((p) => fillOffices(p.el.office, p.office));
+    panels.forEach((panel) => {
+      fillOffices(panel.el.office, panel.office);
+      if (!panel.el.service.options.length || panel.el.service.value === "cargando…") {
+        fillServices(panel.el.service, panel.office);
+      }
+    });
   } catch (error) {
-    toast(error.message, true);
+    // Quiet on the self-healing retries: the first failure already said so.
+    if (!quiet) toast(error.message, true);
+  } finally {
+    officesLoading = false;
   }
 }
 
@@ -640,8 +661,16 @@ function showDone(details) {
 // ------------------------------------------------------------------ settings
 
 function applySettings(settings) {
-  useProxy = !!settings.use_proxy;
+  serverUseProxy = !!settings.use_proxy;
   proxyConfigured = !!settings.proxy_configured;
+  // The 2.5s refresh calls this with the server's value. Adopting it while the
+  // operator has an unsaved toggle open would flip the switch back under them
+  // before they could press Guardar.
+  if (!proxyDirty) useProxy = serverUseProxy;
+  renderProxySwitch();
+}
+
+function renderProxySwitch() {
   const sw = $("proxy-switch");
   sw.setAttribute("aria-checked", String(useProxy));
   sw.classList.toggle("disabled", !proxyConfigured);
@@ -652,17 +681,30 @@ function applySettings(settings) {
     : "Desactivado. El portal se abre directo desde tu conexión.";
 }
 
+function revertProxySwitch() {
+  proxyDirty = false;
+  useProxy = serverUseProxy;
+  renderProxySwitch();
+}
+
 async function saveSettings() {
   saveApplicant();
   try {
-    applySettings(
-      await api("/api/settings", {
-        method: "POST",
-        body: JSON.stringify({ use_proxy: useProxy }),
-      })
-    );
+    const saved = await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({ use_proxy: useProxy }),
+    });
+    const connectionChanged = saved.use_proxy !== serverUseProxy;
+    proxyDirty = false;
+    applySettings(saved);
     toast("Ajustes guardados.");
     $("settings-scrim").hidden = true;
+    if (connectionChanged) {
+      // The lists were read over the old connection, and the lanes were rebuilt.
+      SERVICE_CACHE.clear();
+      OFFICES = [];
+      await loadOffices();
+    }
     refresh();
   } catch (error) {
     toast(error.message, true);
@@ -676,7 +718,10 @@ async function init() {
   APPLICANT_FIELDS.forEach((f) => $(f).addEventListener("change", saveApplicant));
 
   $("settings-btn").addEventListener("click", () => ($("settings-scrim").hidden = false));
-  $("st-close").addEventListener("click", () => ($("settings-scrim").hidden = true));
+  $("st-close").addEventListener("click", () => {
+    revertProxySwitch();
+    $("settings-scrim").hidden = true;
+  });
   $("st-save").addEventListener("click", saveSettings);
   $("cf-cancel").addEventListener("click", () => ($("confirm-scrim").hidden = true));
   $("cf-ok").addEventListener("click", confirmBooking);
@@ -689,7 +734,8 @@ async function init() {
   const toggleProxy = () => {
     if (!proxyConfigured) return toast("Añade tus credenciales de Webshare al .env primero.", true);
     useProxy = !useProxy;
-    applySettings({ use_proxy: useProxy, proxy_configured: proxyConfigured });
+    proxyDirty = useProxy !== serverUseProxy;
+    renderProxySwitch();
   };
   proxySwitch.addEventListener("click", toggleProxy);
   proxySwitch.addEventListener("keydown", (e) => {
@@ -704,6 +750,7 @@ async function init() {
     if (e.key === "s") $("settings-scrim").hidden = false;
     if (e.key === "Escape") {
       // ask-scrim is deliberately absent: it resolves its own promise on Escape.
+      if (!$("settings-scrim").hidden) revertProxySwitch();
       ["confirm-scrim", "done-scrim", "settings-scrim"].forEach((id) => ($(id).hidden = true));
     }
   });
