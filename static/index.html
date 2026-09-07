@@ -43,9 +43,7 @@ header{height:66px;background:var(--surface);border-bottom:1px solid var(--borde
 .dot.live{animation:pulse 1.6s ease-in-out infinite}
 
 /* ---------- layout ---------- */
-.wrap{padding:20px 28px 40px}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
-.toolbar p{margin:0;font-size:12.5px;color:var(--muted)}
+.wrap{padding:24px 28px 40px}
 .lanes{display:grid;grid-template-columns:1fr;gap:16px;align-items:stretch}
 .lanes.two{grid-template-columns:1fr 1fr}
 .lane{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -243,9 +241,6 @@ textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;l
 </header>
 
 <div class="wrap">
-  <div class="toolbar">
-    <p id="lane-hint">Dos carriles fijos, cada uno con su propia sesión del portal: buscan y reservan en paralelo.</p>
-  </div>
   <div class="lanes" id="lanes"></div>
 </div>
 
