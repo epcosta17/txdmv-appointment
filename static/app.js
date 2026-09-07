@@ -455,7 +455,6 @@ function bannerFor(watch) {
   if (watch.state === "booked" && watch.booking) {
     return `<div class="banner ok">Cita ${watch.booking.appointment_number} reservada</div>`;
   }
-  if (watch.state === "found") return '<div class="banner ok">Encontró cupo — mira la grilla</div>';
   if (watch.state === "error") return '<div class="banner">Detenida por errores</div>';
   return "";
 }
