@@ -244,10 +244,8 @@ textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;l
 
 <div class="wrap">
   <div class="toolbar">
-    <p id="lane-hint">Cada carril es una oficina con su propia sesión del portal: buscan y reservan en paralelo.</p>
-    <button class="btn ghost" id="add-lane">+ Añadir carril</button>
+    <p id="lane-hint">Dos carriles fijos, cada uno con su propia sesión del portal: buscan y reservan en paralelo.</p>
   </div>
-  <div class="empty-lane" id="no-lanes" hidden><b>Sin carriles</b>Añade uno para buscar citas.</div>
   <div class="lanes" id="lanes"></div>
 </div>
 
@@ -259,10 +257,6 @@ textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;l
         <div class="field" style="flex:1.3"><label>Trámite</label><select class="js-service"></select></div>
         <div class="field narrow"><label>Desde</label><input class="control js-from" type="date" /></div>
         <button class="btn js-search">Buscar</button>
-        <button class="icon-btn js-close" title="Cerrar carril" aria-label="Cerrar carril">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-               stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
-        </button>
       </div>
 
       <div class="ctl-row watch">
@@ -270,9 +264,6 @@ textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;l
           <button data-mode="notify" aria-selected="true">Solo avisar</button>
           <button data-mode="auto" class="warn" aria-selected="false">Reservar sola</button>
         </div>
-        <div class="field narrow"><label>Hasta</label><input class="control js-date-to" type="date" /></div>
-        <div class="field time"><label>Desde hora</label><input class="control js-time-from" type="time" value="09:00" /></div>
-        <div class="field time"><label>Hasta hora</label><input class="control js-time-to" type="time" value="15:00" /></div>
         <div class="field narrow"><label>Intervalo</label><select class="js-interval">
           <option value="30">cada 30 s</option><option value="60" selected>cada 60 s</option>
           <option value="120">cada 2 min</option><option value="300">cada 5 min</option>

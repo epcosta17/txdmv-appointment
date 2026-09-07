@@ -72,6 +72,20 @@ def new_session():
 
 lanes = LaneManager(new_session)
 
+# The pair is fixed: the two Houston offices this desk actually works. Lanes are not
+# created or closed from the UI, so there is no empty state and no lane bookkeeping.
+FIXED_LANES = [("Houston North", DEFAULT_SERVICE), ("Houston South", DEFAULT_SERVICE)]
+
+
+def build_lanes():
+    lanes.close_all()
+    for office, service in FIXED_LANES:
+        lanes.create(office, service)
+
+
+# Cheap at import: a lane holds a session object but opens nothing until it is used.
+build_lanes()
+
 
 def picker_session():
     """A session apart from the lanes, used only to read the dropdowns.
@@ -87,10 +101,11 @@ def picker_session():
 
 
 def reset_connections():
+    """Rebuild every session. The fixed lanes come back immediately."""
     global _proxy_cache, _picker_session
-    lanes.close_all()
     _proxy_cache = None
     _picker_session = None
+    build_lanes()
 
 
 # ------------------------------------------------------------------- schemas
@@ -109,11 +124,6 @@ class Settings(BaseModel):
     use_proxy: bool = False
 
 
-class LaneRequest(BaseModel):
-    office: str = DEFAULT_OFFICE
-    service: str = DEFAULT_SERVICE
-
-
 class SearchRequest(BaseModel):
     office: str | None = None
     service: str | None = None
@@ -129,11 +139,15 @@ class BookRequest(BaseModel):
 class WatchRequest(BaseModel):
     auto_book: bool = False
     interval: int = 60
+    applicant: Applicant = Applicant()
+    # The portal only ever shows the current day and the next two, so a date range
+    # or time window buys almost nothing and the UI no longer offers them. The
+    # filters stay here because the watcher still honours them and they are the
+    # guardrail that keeps auto-booking inside what the caller asked for.
     date_from: str | None = None
     date_to: str | None = None
     time_from: str | None = None
     time_to: str | None = None
-    applicant: Applicant = Applicant()
 
 
 def guard(call):
@@ -211,17 +225,6 @@ def services(office: str = DEFAULT_OFFICE):
 
 @app.get("/api/lanes")
 def list_lanes():
-    return lanes.status()
-
-
-@app.post("/api/lanes")
-def create_lane(request: LaneRequest):
-    return guard(lambda: lanes.create(request.office, request.service).status())
-
-
-@app.delete("/api/lanes/{lane_id}")
-def delete_lane(lane_id: int):
-    guard(lambda: lanes.remove(lane_id))
     return lanes.status()
 
 

@@ -244,15 +244,6 @@ function syncLanes(state) {
   });
 
   $("lanes").classList.toggle("two", state.lanes.length > 1);
-  $("add-lane").disabled = state.lanes.length >= state.max_lanes;
-  $("lane-hint").textContent = state.lanes.length
-    ? "Cada carril es una oficina con su propia sesión: buscan y reservan en paralelo."
-    : "Añade un carril para empezar.";
-
-  // The placeholder is its own element that we show and hide. Writing innerHTML on
-  // the container would detach every live panel while `panels` still held them,
-  // leaving the Map convinced it had rendered lanes that are no longer in the page.
-  $("no-lanes").hidden = state.lanes.length > 0;
 }
 
 // -------------------------------------------------------------------- lanes
@@ -273,12 +264,10 @@ class LanePanel {
     const q = (sel) => this.root.querySelector(sel);
     this.el = {
       office: q(".js-office"), service: q(".js-service"), from: q(".js-from"),
-      search: q(".js-search"), close: q(".js-close"), fa: q(".js-fa"),
+      search: q(".js-search"), fa: q(".js-fa"),
       session: q(".js-session"), count: q(".js-count"), grid: q(".js-grid"),
       at: q(".js-at"), lat: q(".js-lat"), banner: q(".js-banner"), mode: q(".js-mode"),
-      interval: q(".js-interval"), dateTo: q(".js-date-to"),
-      timeFrom: q(".js-time-from"), timeTo: q(".js-time-to"),
-      watch: q(".js-watch"), log: q(".js-log"),
+      interval: q(".js-interval"), watch: q(".js-watch"), log: q(".js-log"),
     };
 
     this.el.from.value = isoToday();
@@ -290,7 +279,6 @@ class LanePanel {
       fillServices(this.el.service, this.el.office.value)
     );
     this.el.search.addEventListener("click", () => this.search());
-    this.el.close.addEventListener("click", () => this.close());
     this.el.watch.addEventListener("click", () => this.toggleWatch());
     this.el.mode.addEventListener("click", (e) => {
       const button = e.target.closest("button[data-mode]");
@@ -341,16 +329,6 @@ class LanePanel {
     }
   }
 
-  async close() {
-    if (this.watching && !confirm("Ese carril está vigilando. ¿Cerrarlo igual?")) return;
-    try {
-      await api(`/api/lanes/${this.id}`, { method: "DELETE" });
-      refresh();
-    } catch (error) {
-      toast(error.message, true);
-    }
-  }
-
   async toggleWatch() {
     try {
       if (this.watching) {
@@ -363,11 +341,9 @@ class LanePanel {
           $("settings-scrim").hidden = false;
           return toast("La reserva automática necesita todos los datos (Ajustes).", true);
         }
-        const window = [this.el.timeFrom.value, this.el.timeTo.value].filter(Boolean).join(" – ");
         const ok = confirm(
-          `Reservará una cita REAL sin preguntar.\n\n` +
+          `Reservará una cita REAL sin preguntar, la primera que aparezca.\n\n` +
             `Oficina: ${this.el.office.value}\nTrámite: ${this.el.service.value}\n` +
-            `Horario permitido: ${window || "cualquiera"}\n` +
             `A nombre de: ${person.first_name} ${person.last_name}\n\n¿Continuar?`
         );
         if (!ok) return;
@@ -377,10 +353,6 @@ class LanePanel {
         body: JSON.stringify({
           auto_book: this.mode === "auto",
           interval: Number(this.el.interval.value),
-          date_from: this.el.from.value || null,
-          date_to: this.el.dateTo.value || null,
-          time_from: this.el.timeFrom.value || null,
-          time_to: this.el.timeTo.value || null,
           applicant: applicant(),
         }),
       });
@@ -406,7 +378,7 @@ class LanePanel {
       select.closest(".field")?.classList.toggle("locked", this.watching)
     );
 
-    this.el.banner.innerHTML = bannerFor(watch, this.el.timeFrom.value, this.el.timeTo.value);
+    this.el.banner.innerHTML = bannerFor(watch);
     this.el.log.innerHTML = watch.log
       .slice()
       .reverse()
@@ -471,12 +443,9 @@ class LanePanel {
   }
 }
 
-function bannerFor(watch, from, to) {
+function bannerFor(watch) {
   if (watch.state === "watching" && watch.auto_book) {
-    const window = [from, to].filter(Boolean).join(" y ");
-    return `<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo${
-      window ? ` entre ${window}` : ""
-    }</div>`;
+    return '<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo que aparezca</div>';
   }
   if (watch.state === "watching") {
     return `<div class="banner ok"><span class="dot ok live"></span>Vigilando${
@@ -527,19 +496,6 @@ async function loadOffices() {
   try {
     OFFICES = (await api("/api/offices")).offices;
     panels.forEach((p) => fillOffices(p.el.office, p.office));
-  } catch (error) {
-    toast(error.message, true);
-  }
-}
-
-async function addLane() {
-  try {
-    const office = OFFICES.length ? OFFICES[8]?.name || OFFICES[0].name : "Houston North";
-    await api("/api/lanes", {
-      method: "POST",
-      body: JSON.stringify({ office, service: "Title Companies and Runners" }),
-    });
-    await refresh();
   } catch (error) {
     toast(error.message, true);
   }
@@ -645,7 +601,6 @@ async function init() {
   loadApplicant();
   APPLICANT_FIELDS.forEach((f) => $(f).addEventListener("change", saveApplicant));
 
-  $("add-lane").addEventListener("click", addLane);
   $("settings-btn").addEventListener("click", () => ($("settings-scrim").hidden = false));
   $("st-close").addEventListener("click", () => ($("settings-scrim").hidden = true));
   $("st-save").addEventListener("click", saveSettings);
@@ -673,15 +628,13 @@ async function init() {
   document.addEventListener("keydown", (e) => {
     if (e.target.matches("input,select,textarea")) return;
     if (e.key === "s") $("settings-scrim").hidden = false;
-    if (e.key === "n") addLane();
     if (e.key === "Escape") {
       ["confirm-scrim", "done-scrim", "settings-scrim"].forEach((id) => ($(id).hidden = true));
     }
   });
 
   await loadOffices();
-  const state = await refresh();
-  if (state && !state.lanes.length) await addLane();
+  await refresh();
 
   setInterval(refresh, 2500);
   setInterval(() => fetch("/api/keepalive", { method: "POST" }).catch(() => {}), 5 * 60 * 1000);

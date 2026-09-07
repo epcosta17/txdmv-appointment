@@ -47,21 +47,22 @@ class StubSession:
 def client(monkeypatch):
     monkeypatch.setattr(web, "lanes", LaneManager(StubSession, max_lanes=2))
     monkeypatch.setattr(web, "_picker_session", StubSession())
+    web.build_lanes()
     with TestClient(web.app) as c:
         yield c
     web.lanes.close_all()
 
 
-def make_lane(client, office="Houston North", service="Title Companies and Runners"):
-    return client.post("/api/lanes", json={"office": office, "service": service}).json()
+def lane_ids(client):
+    return [lane["id"] for lane in client.get("/api/lanes").json()["lanes"]]
 
 
 # --------------------------------------------------------------------- state
 
 
-def test_state_starts_with_no_lanes(client):
+def test_the_two_lanes_exist_from_the_start(client):
     body = client.get("/api/state").json()
-    assert body["lanes"] == []
+    assert [lane["office"] for lane in body["lanes"]] == ["Houston North", "Houston South"]
     assert body["max_lanes"] == 2
     assert body["settings"]["use_proxy"] is False
 
@@ -79,24 +80,25 @@ def test_services_are_scoped_to_the_office(client):
 # --------------------------------------------------------------------- lanes
 
 
-def test_a_lane_can_be_created(client):
-    lane = make_lane(client)
-    assert lane["office"] == "Houston North"
-    assert lane["watch"]["state"] == "idle"
+def test_lanes_start_idle(client):
+    assert all(l["watch"]["state"] == "idle" for l in client.get("/api/lanes").json()["lanes"])
 
 
-def test_two_lanes_fit_and_a_third_does_not(client):
-    make_lane(client, "Houston North")
-    make_lane(client, "Houston South")
-    response = client.post("/api/lanes", json={"office": "Austin", "service": "X"})
-    assert response.status_code == 409
+def test_lanes_cannot_be_created_over_the_api(client):
+    # The pair is fixed, so the endpoint is gone rather than merely guarded.
+    assert client.post("/api/lanes", json={"office": "Austin", "service": "X"}).status_code == 405
 
 
-def test_a_lane_can_be_removed_and_replaced(client):
-    lane = make_lane(client)
-    make_lane(client, "Houston South")
-    client.delete(f"/api/lanes/{lane['id']}")
-    assert client.post("/api/lanes", json={"office": "Austin", "service": "X"}).status_code == 200
+def test_lanes_cannot_be_deleted_over_the_api(client):
+    # 404 rather than 405: the route is gone entirely, not merely method-guarded.
+    assert client.delete(f"/api/lanes/{lane_ids(client)[0]}").status_code == 404
+
+
+def test_rebuilding_restores_exactly_the_two_lanes(client):
+    web.build_lanes()
+    assert [l["office"] for l in client.get("/api/lanes").json()["lanes"]] == [
+        "Houston North", "Houston South"
+    ]
 
 
 def test_acting_on_an_unknown_lane_is_a_404(client):
@@ -104,31 +106,27 @@ def test_acting_on_an_unknown_lane_is_a_404(client):
 
 
 def test_searching_one_lane_does_not_touch_the_other(client):
-    a = make_lane(client, "Houston North")
-    b = make_lane(client, "Houston South")
+    a, b = lane_ids(client)
 
-    client.post(f"/api/lanes/{a['id']}/search", json={})
+    client.post(f"/api/lanes/{a}/search", json={})
 
-    lane_a, lane_b = web.lanes.get(a["id"]), web.lanes.get(b["id"])
-    assert lane_a.session.searches and not lane_b.session.searches
+    assert web.lanes.get(a).session.searches and not web.lanes.get(b).session.searches
 
 
 def test_search_result_carries_the_lanes_office(client):
-    lane = make_lane(client, "Houston South")
-    body = client.post(f"/api/lanes/{lane['id']}/search", json={}).json()
+    body = client.post(f"/api/lanes/{lane_ids(client)[1]}/search", json={}).json()
     assert body["office"] == "Houston South"
 
 
 def test_a_lane_remembers_a_changed_target(client):
-    lane = make_lane(client)
-    client.post(f"/api/lanes/{lane['id']}/search",
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/search",
                 json={"office": "Austin", "service": "Y", "from_date": "2026-09-08"})
-    assert web.lanes.get(lane["id"]).office == "Austin"
+    assert web.lanes.get(lane).office == "Austin"
 
 
 def test_result_endpoint_is_empty_before_searching(client):
-    lane = make_lane(client)
-    body = client.get(f"/api/lanes/{lane['id']}/result").json()
+    body = client.get(f"/api/lanes/{lane_ids(client)[0]}/result").json()
     assert body["slots"] == []
 
 
@@ -136,87 +134,88 @@ def test_result_endpoint_is_empty_before_searching(client):
 
 
 def test_booking_without_personal_data_is_refused(client):
-    lane = make_lane(client)
-    response = client.post(f"/api/lanes/{lane['id']}/book",
+    lane = lane_ids(client)[0]
+    response = client.post(f"/api/lanes/{lane}/book",
                            json={"raw": "9/8/2026 9:00:00 AM", "applicant": {}})
     assert response.status_code == 400
-    assert web.lanes.get(lane["id"]).session.booked == []
+    assert web.lanes.get(lane).session.booked == []
 
 
 def test_each_lane_books_on_its_own_session(client):
-    a = make_lane(client, "Houston North")
-    b = make_lane(client, "Houston South")
+    a, b = lane_ids(client)
 
-    client.post(f"/api/lanes/{a['id']}/book",
+    client.post(f"/api/lanes/{a}/book",
                 json={"raw": "9/8/2026 9:00:00 AM", "applicant": APPLICANT})
 
-    assert web.lanes.get(a["id"]).session.booked
-    assert not web.lanes.get(b["id"]).session.booked
+    assert web.lanes.get(a).session.booked
+    assert not web.lanes.get(b).session.booked
 
 
 def test_both_lanes_can_book_in_parallel(client):
-    a = make_lane(client, "Houston North")
-    b = make_lane(client, "Houston South")
+    a, b = lane_ids(client)
 
     for lane, raw in ((a, "9/8/2026 9:00:00 AM"), (b, "9/9/2026 2:30:00 PM")):
-        assert client.post(f"/api/lanes/{lane['id']}/book",
+        assert client.post(f"/api/lanes/{lane}/book",
                            json={"raw": raw, "applicant": APPLICANT}).status_code == 200
 
-    assert web.lanes.get(a["id"]).session.booked[0][0] == "9/8/2026 9:00:00 AM"
-    assert web.lanes.get(b["id"]).session.booked[0][0] == "9/9/2026 2:30:00 PM"
+    assert web.lanes.get(a).session.booked[0][0] == "9/8/2026 9:00:00 AM"
+    assert web.lanes.get(b).session.booked[0][0] == "9/9/2026 2:30:00 PM"
 
 
 # -------------------------------------------------------------------- watch
 
 
 def test_auto_book_without_personal_data_is_refused(client):
-    lane = make_lane(client)
-    response = client.post(f"/api/lanes/{lane['id']}/watch",
+    lane = lane_ids(client)[0]
+    response = client.post(f"/api/lanes/{lane}/watch",
                            json={"auto_book": True, "applicant": {}})
     assert response.status_code == 400
-    assert web.lanes.get(lane["id"]).watcher.status()["state"] == "idle"
+    assert web.lanes.get(lane).watcher.status()["state"] == "idle"
 
 
 def test_notify_mode_starts_without_personal_data(client):
-    lane = make_lane(client)
-    body = client.post(f"/api/lanes/{lane['id']}/watch",
+    body = client.post(f"/api/lanes/{lane_ids(client)[0]}/watch",
                        json={"auto_book": False, "applicant": {}}).json()
     assert body["watch"]["state"] == "watching"
     assert body["watch"]["auto_book"] is False
 
 
 def test_a_watch_inherits_its_lanes_target(client):
-    lane = make_lane(client, "Houston South", "All other transactions")
-    body = client.post(f"/api/lanes/{lane['id']}/watch", json={"applicant": {}}).json()
+    lane = lane_ids(client)[1]
+    body = client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}}).json()
     assert body["watch"]["office"] == "Houston South"
-    assert body["watch"]["service"] == "All other transactions"
+    assert body["watch"]["service"] == "Title Companies and Runners"
+
+
+def test_a_watch_without_filters_accepts_any_slot(client):
+    # The UI no longer sends a window; the watcher must then take whatever shows up.
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}})
+    config = web.lanes.get(lane).watcher.config
+    assert config["time_from"] is None and config["date_to"] is None
 
 
 def test_watching_one_lane_leaves_the_other_idle(client):
-    a = make_lane(client, "Houston North")
-    b = make_lane(client, "Houston South")
+    a, b = lane_ids(client)
 
-    client.post(f"/api/lanes/{a['id']}/watch", json={"applicant": {}})
+    client.post(f"/api/lanes/{a}/watch", json={"applicant": {}})
 
     states = {l["id"]: l["watch"]["state"] for l in client.get("/api/lanes").json()["lanes"]}
-    assert states[a["id"]] == "watching" and states[b["id"]] == "idle"
+    assert states[a] == "watching" and states[b] == "idle"
 
 
 def test_both_lanes_can_watch_at_once(client):
-    a = make_lane(client, "Houston North")
-    b = make_lane(client, "Houston South")
-    for lane in (a, b):
-        client.post(f"/api/lanes/{lane['id']}/watch", json={"applicant": {}})
+    for lane in lane_ids(client):
+        client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}})
 
     states = [l["watch"]["state"] for l in client.get("/api/lanes").json()["lanes"]]
     assert states == ["watching", "watching"]
 
 
 def test_a_watch_can_be_stopped(client):
-    lane = make_lane(client)
-    client.post(f"/api/lanes/{lane['id']}/watch", json={"applicant": {}})
-    body = client.delete(f"/api/lanes/{lane['id']}/watch").json()
-    assert body["watch"]["state"] == "idle"
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}})
+    assert client.delete(f"/api/lanes/{lane}/watch").json()["watch"]["state"] == "idle"
 
 
 # ------------------------------------------------------------------ settings
