@@ -188,11 +188,19 @@ def test_a_watch_inherits_its_lanes_target(client):
 
 
 def test_a_watch_without_filters_accepts_any_slot(client):
-    # The UI no longer sends a window; the watcher must then take whatever shows up.
+    # No floor sent means no floor applied; the watcher takes whatever shows up.
     lane = lane_ids(client)[0]
     client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}})
     config = web.lanes.get(lane).watcher.config
     assert config["time_from"] is None and config["date_to"] is None
+
+
+def test_a_watch_carries_the_from_time_floor(client):
+    lane = lane_ids(client)[0]
+    body = client.post(f"/api/lanes/{lane}/watch",
+                       json={"applicant": {}, "time_from": "10:30"}).json()
+    assert web.lanes.get(lane).watcher.config["time_from"] == "10:30"
+    assert body["watch"]["time_from"] == "10:30"
 
 
 def test_watching_one_lane_leaves_the_other_idle(client):

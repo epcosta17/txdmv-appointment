@@ -206,6 +206,9 @@ class Watcher:
                 "interval": self.config.get("interval", 60),
                 "office": self.config.get("office"),
                 "service": self.config.get("service"),
+                # Exposed so the UI reports the floor the watch is actually running
+                # with, rather than whatever the form happens to show now.
+                "time_from": self.config.get("time_from"),
                 "elapsed": elapsed,
                 "next_in": next_in,
                 "found": list(self.found),

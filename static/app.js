@@ -270,7 +270,8 @@ class LanePanel {
       search: q(".js-search"), fa: q(".js-fa"),
       session: q(".js-session"), count: q(".js-count"), grid: q(".js-grid"),
       at: q(".js-at"), lat: q(".js-lat"), banner: q(".js-banner"), mode: q(".js-mode"),
-      interval: q(".js-interval"), watch: q(".js-watch"), log: q(".js-log"),
+      interval: q(".js-interval"), timeFrom: q(".js-time-from"),
+      watch: q(".js-watch"), log: q(".js-log"),
     };
 
     this.el.from.value = isoToday();
@@ -353,6 +354,7 @@ class LanePanel {
             summaryBlock([
               ["Oficina", this.el.office.value],
               ["Trámite", this.el.service.value],
+              ["No antes de", this.el.timeFrom.value || "cualquier hora"],
               ["A nombre de", `${person.first_name} ${person.last_name}`],
               ["Correo", person.email],
             ]),
@@ -364,6 +366,8 @@ class LanePanel {
         body: JSON.stringify({
           auto_book: this.mode === "auto",
           interval: Number(this.el.interval.value),
+          // Empty means no floor - the watcher then takes the earliest opening.
+          time_from: this.el.timeFrom.value || null,
           applicant: applicant(),
         }),
       });
@@ -457,11 +461,14 @@ class LanePanel {
 }
 
 function bannerFor(watch) {
+  // Read the floor from the running watch, not from the input: the operator may
+  // have edited the field after starting, and the banner must not lie about it.
+  const floor = watch.time_from ? ` desde las ${watch.time_from}` : "";
   if (watch.state === "watching" && watch.auto_book) {
-    return '<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo que aparezca</div>';
+    return `<div class="banner"><span class="dot warn live"></span>VIGILANDO — reservará el primer cupo${floor}</div>`;
   }
   if (watch.state === "watching") {
-    return `<div class="banner ok"><span class="dot ok live"></span>Vigilando${
+    return `<div class="banner ok"><span class="dot ok live"></span>Vigilando${floor}${
       watch.next_in ? ` — reintenta en ${watch.next_in} s` : ""
     }</div>`;
   }

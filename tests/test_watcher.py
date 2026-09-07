@@ -187,6 +187,26 @@ def test_stop_returns_it_to_idle():
     assert watcher.status()["state"] == "idle"
 
 
+def test_status_reports_the_floor_it_is_running_with():
+    watcher = Watcher(FakeSession([[]]))
+    watcher.arm(config(time_from="10:00"))
+    assert watcher.status()["time_from"] == "10:00"
+
+
+def test_status_reports_no_floor_when_none_was_set():
+    watcher = Watcher(FakeSession([[]]))
+    watcher.arm(config())
+    assert watcher.status()["time_from"] is None
+
+
+def test_a_floor_alone_still_filters():
+    session = FakeSession([[slot("2026-09-09", "08:00"), slot("2026-09-09", "10:15")]])
+    watcher = Watcher(session)
+    watcher.arm(config(auto_book=True, time_from="10:00"))
+    watcher.tick()
+    assert session.booked == ["2026-09-09 10:15"]
+
+
 def test_status_is_json_safe():
     import json
 
