@@ -258,6 +258,9 @@ class LanePanel {
     this.result = null;
     this.resultSeq = -1;
     this.searching = false;
+    // The watcher parks in "booked" for good, so without this every poll would
+    // reopen the confirmation the moment the operator closed it.
+    this.announced = null;
     this.watching = false;
 
     this.root = $("lane-tpl").content.firstElementChild.cloneNode(true);
@@ -341,11 +344,19 @@ class LanePanel {
           $("settings-scrim").hidden = false;
           return toast("La reserva automática necesita todos los datos (Ajustes).", true);
         }
-        const ok = confirm(
-          `Reservará una cita REAL sin preguntar, la primera que aparezca.\n\n` +
-            `Oficina: ${this.el.office.value}\nTrámite: ${this.el.service.value}\n` +
-            `A nombre de: ${person.first_name} ${person.last_name}\n\n¿Continuar?`
-        );
+        const ok = await ask({
+          title: "Reservar sola",
+          ok: "Sí, reservar sola",
+          danger: true,
+          body:
+            '<div class="banner">Tomará la primera cita que aparezca y la reservará de verdad, sin preguntar.</div>' +
+            summaryBlock([
+              ["Oficina", this.el.office.value],
+              ["Trámite", this.el.service.value],
+              ["A nombre de", `${person.first_name} ${person.last_name}`],
+              ["Correo", person.email],
+            ]),
+        });
         if (!ok) return;
       }
       await api(`/api/lanes/${this.id}/watch`, {
@@ -396,7 +407,9 @@ class LanePanel {
       }
     }
 
-    if (watch.state === "booked" && watch.booking && $("done-scrim").hidden) {
+    const number = watch.booking?.appointment_number;
+    if (watch.state === "booked" && number && number !== this.announced) {
+      this.announced = number;
       showDone(watch.booking);
       toast(`${lane.office}: la vigilancia reservó una cita.`);
     }
@@ -500,12 +513,51 @@ async function loadOffices() {
   }
 }
 
+// ------------------------------------------------------------------ dialogs
+
+/** In-page replacement for window.confirm. Resolves true when accepted. */
+function ask({ title, body, ok = "Continuar", danger = false }) {
+  return new Promise((resolve) => {
+    $("ask-title").textContent = title;
+    $("ask-body").innerHTML = body;
+    const okButton = $("ask-ok");
+    okButton.textContent = ok;
+    okButton.classList.toggle("danger", danger);
+    $("ask-scrim").hidden = false;
+    okButton.focus();
+
+    const finish = (value) => {
+      $("ask-scrim").hidden = true;
+      okButton.removeEventListener("click", accept);
+      $("ask-cancel").removeEventListener("click", cancel);
+      document.removeEventListener("keydown", onKey, true);
+      resolve(value);
+    };
+    const accept = () => finish(true);
+    const cancel = () => finish(false);
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        cancel();
+      }
+    };
+
+    okButton.addEventListener("click", accept);
+    $("ask-cancel").addEventListener("click", cancel);
+    document.addEventListener("keydown", onKey, true);
+  });
+}
+
 // ---------------------------------------------------------------- booking
 
 let pending = null;
 
 function summaryRows(rows) {
   return rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v || "—"}</dd></div>`).join("");
+}
+
+function summaryBlock(rows) {
+  return `<div class="summary">${summaryRows(rows)}</div>`;
 }
 
 function openConfirm(panel, raw) {
@@ -628,6 +680,7 @@ async function init() {
     if (e.target.matches("input,select,textarea")) return;
     if (e.key === "s") $("settings-scrim").hidden = false;
     if (e.key === "Escape") {
+      // ask-scrim is deliberately absent: it resolves its own promise on Escape.
       ["confirm-scrim", "done-scrim", "settings-scrim"].forEach((id) => ($(id).hidden = true));
     }
   });

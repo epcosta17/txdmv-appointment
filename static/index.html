@@ -171,6 +171,8 @@ textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;l
   box-shadow:0 20px 60px #1a1a1a2e;max-height:90vh;overflow-y:auto}
 .modal h3{margin:0 0 4px;font-family:var(--head);font-size:19px;font-weight:700}
 .modal>p{margin:0 0 18px;font-size:13px;color:var(--text-2)}
+#ask-body{font-size:13.5px;color:var(--text-2);line-height:1.5}
+#ask-body .summary{margin-top:14px}
 .summary{display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
 .summary div{display:flex;justify-content:space-between;gap:16px;padding:10px 14px;font-size:13px}
 .summary div+div{border-top:1px solid var(--border)}
@@ -361,6 +363,17 @@ textarea.control{height:auto;padding:10px 12px;min-height:64px;resize:vertical;l
     <div class="modal-actions">
       <button class="btn ghost" id="st-close">Cerrar</button>
       <button class="btn" id="st-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="ask-scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ask-title">
+    <h3 id="ask-title">Confirmar</h3>
+    <div id="ask-body"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="ask-cancel">Cancelar</button>
+      <button class="btn" id="ask-ok">Continuar</button>
     </div>
   </div>
 </div>
