@@ -210,14 +210,17 @@ async function refresh() {
     const state = await api("/api/state");
     applySettings(state.settings);
     syncLanes(state);
+    var loaded = state;
     $("conn").textContent = state.settings.use_proxy ? "PROXY" : "DIRECTO";
     $("conn-dot").className = "dot " + (state.settings.use_proxy ? "accent" : "");
     const open = state.lanes.filter((l) => l.session.open).length;
     $("sess").textContent = open ? `${open} sesión${open > 1 ? "es" : ""}` : "sin sesión";
     $("sess-dot").className = "dot " + (open ? "ok" : "");
+    return loaded;
   } catch (_) {
     $("conn").textContent = "SIN SERVIDOR";
     $("conn-dot").className = "dot warn";
+    return null;
   }
 }
 
@@ -245,12 +248,11 @@ function syncLanes(state) {
   $("lane-hint").textContent = state.lanes.length
     ? "Cada carril es una oficina con su propia sesión: buscan y reservan en paralelo."
     : "Añade un carril para empezar.";
-  if (!state.lanes.length && !$("lanes").querySelector(".empty-lane")) {
-    $("lanes").innerHTML =
-      '<div class="empty-lane"><b>Sin carriles</b>Añade uno para buscar citas.</div>';
-  } else if (state.lanes.length) {
-    $("lanes").querySelector(".empty-lane")?.remove();
-  }
+
+  // The placeholder is its own element that we show and hide. Writing innerHTML on
+  // the container would detach every live panel while `panels` still held them,
+  // leaving the Map convinced it had rendered lanes that are no longer in the page.
+  $("no-lanes").hidden = state.lanes.length > 0;
 }
 
 // -------------------------------------------------------------------- lanes
@@ -397,11 +399,11 @@ class LanePanel {
       ? `sesión viva · expira en ${Math.floor(lane.session.expires_in / 60)} min`
       : "sin sesión abierta";
 
-    this.el.watch.textContent = this.watching ? "Detener vigilancia" : "Iniciar vigilancia";
+    this.el.watch.textContent = this.watching ? "Detener" : "Vigilar";
     this.el.watch.classList.toggle("danger", this.watching);
     this.root.classList.toggle("armed", this.watching && watch.auto_book);
-    [this.el.office, this.el.service, this.el.interval].forEach((s) =>
-      s.parentElement.classList.toggle("locked", this.watching)
+    [this.el.office, this.el.service, this.el.interval].forEach((select) =>
+      select.closest(".field")?.classList.toggle("locked", this.watching)
     );
 
     this.el.banner.innerHTML = bannerFor(watch, this.el.timeFrom.value, this.el.timeTo.value);
@@ -678,8 +680,8 @@ async function init() {
   });
 
   await loadOffices();
-  await refresh();
-  if (!panels.size) await addLane();
+  const state = await refresh();
+  if (state && !state.lanes.length) await addLane();
 
   setInterval(refresh, 2500);
   setInterval(() => fetch("/api/keepalive", { method: "POST" }).catch(() => {}), 5 * 60 * 1000);
