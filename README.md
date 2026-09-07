@@ -36,6 +36,9 @@ Python 3.10+; la primera vez crea el entorno e instala las dependencias solo.
   se detiene; hay que armarlo a propósito y confirmar, nunca arranca así. Los dos
   carriles pueden vigilar y reservar al mismo tiempo.
 
+  Vigila lo que muestran los campos en ese momento — oficina, trámite y fecha —,
+  no lo de la última búsqueda; no hace falta buscar antes de vigilar.
+
   Se acota por **franja horaria**: desde qué hora y hasta qué hora. Cualquiera de
   los dos extremos puede ir vacío, y ambos vacíos significa cualquier hora. Los
   límites son inclusivos. Acotar por fecha no aporta dentro de una lista de tres
@@ -168,4 +171,4 @@ Candidates that fail a live country check are skipped before the flow starts.
 python3 -m pytest -q
 ```
 
-145 tests, no network - they run against the captured pages in `fixtures/`.
+151 tests, no network - they run against the captured pages in `fixtures/`.

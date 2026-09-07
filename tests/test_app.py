@@ -204,6 +204,40 @@ def test_a_watch_carries_the_time_window(client):
     assert (body["watch"]["time_from"], body["watch"]["time_to"]) == ("10:30", "15:00")
 
 
+def test_a_watch_uses_the_target_sent_with_it_not_the_last_search(client):
+    # The dangerous version of this bug: change the office, press watch without
+    # searching, and auto-booking would reserve at the office you left behind.
+    lane = lane_ids(client)[0]
+    body = client.post(f"/api/lanes/{lane}/watch",
+                       json={"applicant": {}, "office": "Austin",
+                             "service": "All other transactions"}).json()
+
+    assert body["watch"]["office"] == "Austin"
+    assert body["watch"]["service"] == "All other transactions"
+    assert web.lanes.get(lane).office == "Austin"
+
+
+def test_a_watch_uses_the_date_sent_with_it(client):
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/watch",
+                json={"applicant": {}, "date_from": "2026-09-11"})
+    assert web.lanes.get(lane).watcher.config["date_from"] == "2026-09-11"
+
+
+def test_an_empty_date_clears_the_lanes_date(client):
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/search", json={"from_date": "2026-09-08"})
+    client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}, "date_from": ""})
+    assert web.lanes.get(lane).watcher.config["date_from"] is None
+
+
+def test_a_watch_without_a_target_keeps_the_lanes_own(client):
+    lane = lane_ids(client)[0]
+    client.post(f"/api/lanes/{lane}/search", json={"office": "Waco", "service": "Y"})
+    body = client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}}).json()
+    assert body["watch"]["office"] == "Waco"
+
+
 def test_either_end_of_the_window_may_be_omitted(client):
     lane = lane_ids(client)[0]
     client.post(f"/api/lanes/{lane}/watch", json={"applicant": {}, "time_to": "12:00"})

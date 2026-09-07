@@ -317,7 +317,7 @@ class LanePanel {
         body: JSON.stringify({
           office: this.el.office.value,
           service: this.el.service.value,
-          from_date: this.el.from.value || null,
+          from_date: this.el.from.value,
           first_available: this.firstAvailable,
         }),
       });
@@ -369,6 +369,12 @@ class LanePanel {
           // Either end may be empty; an empty bound simply is not applied.
           time_from: this.el.timeFrom.value || null,
           time_to: this.el.timeTo.value || null,
+          // Sent every time so the watch runs against what the form shows now,
+          // even if no search was made after changing it. "" clears the date.
+          office: this.el.office.value,
+          service: this.el.service.value,
+          date_from: this.el.from.value,
+          first_available: this.firstAvailable,
           applicant: applicant(),
         }),
       });

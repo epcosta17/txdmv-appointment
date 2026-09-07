@@ -38,8 +38,13 @@ class Lane:
         self.session = session
         self.watcher = Watcher(session)
 
-    def search(self, office=None, service=None, from_date=None, first_available=None):
-        """Search and remember the target, so the watcher inherits what you last chose."""
+    def retarget(self, office=None, service=None, from_date=None, first_available=None):
+        """Point the lane at an office, service and date.
+
+        Searching and starting a watch both go through here, so a watch can never
+        run against a target the operator has since changed on screen. Omitting a
+        field leaves it alone; an empty date clears it.
+        """
         if office:
             self.office = office
         if service:
@@ -48,6 +53,9 @@ class Lane:
             self.from_date = from_date or None
         if first_available is not None:
             self.first_available = bool(first_available)
+
+    def search(self, office=None, service=None, from_date=None, first_available=None):
+        self.retarget(office, service, from_date, first_available)
         return self.session.search(
             office=self.office,
             service=self.service,

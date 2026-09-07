@@ -140,6 +140,12 @@ class WatchRequest(BaseModel):
     auto_book: bool = False
     interval: int = 60
     applicant: Applicant = Applicant()
+    # The watch runs against whatever the form currently shows, not against the
+    # target of the last search - otherwise changing the office and pressing watch
+    # would quietly keep watching (and auto-booking at) the previous one.
+    office: str | None = None
+    service: str | None = None
+    first_available: bool | None = None
     # The portal only ever shows the current day and the next two, so a date range
     # or time window buys almost nothing and the UI no longer offers them. The
     # filters stay here because the watcher still honours them and they are the
@@ -266,17 +272,22 @@ def lane_watch_start(lane_id: int, request: WatchRequest):
                 ", ".join(missing_fields(request.applicant))
             ),
         )
+    lane.retarget(
+        office=request.office,
+        service=request.service,
+        from_date=request.date_from,
+        first_available=request.first_available,
+    )
     config = request.model_dump()
     config.update(
         {
             "office": lane.office,
             "service": lane.service,
             "first_available": lane.first_available,
+            "date_from": lane.from_date,
             "applicant": request.applicant.model_dump(),
         }
     )
-    # The watcher searches from the lane's own date when one was chosen.
-    config["date_from"] = request.date_from or lane.from_date
     lane.watcher.start(config)
     return lane.status()
 

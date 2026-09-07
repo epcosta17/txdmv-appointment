@@ -111,6 +111,20 @@ def test_result_prefers_what_the_watcher_saw(manager):
     assert lane.result()["office"] == "from-watcher"
 
 
+def test_retarget_changes_the_lane_without_searching(manager):
+    lane = manager.create("Houston North", "X")
+    lane.retarget(office="Houston South", service="Y", from_date="2026-09-08")
+
+    assert (lane.office, lane.service, lane.from_date) == ("Houston South", "Y", "2026-09-08")
+    assert lane.session.searches == []
+
+
+def test_retarget_leaves_omitted_fields_alone(manager):
+    lane = manager.create("Houston North", "X")
+    lane.retarget(from_date="2026-09-08")
+    assert lane.office == "Houston North" and lane.service == "X"
+
+
 def test_status_is_json_safe(manager):
     import json
 
